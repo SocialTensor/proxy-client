@@ -45,8 +45,8 @@ class ValidatorInfo(BaseModel):
 
 class ImageGenerationService:
     def __init__(self):
-        self.subtensor = bt.subtensor("test")
-        self.metagraph = self.subtensor.metagraph(119)
+        self.subtensor = bt.subtensor("finney")
+        self.metagraph = self.subtensor.metagraph(23)
         self.client = MongoClient(
             f"mongodb://{MONGO_DB_USERNAME}:{MONGO_DB_PASSWORD}@localhost:27017"
         )
@@ -124,7 +124,7 @@ class ImageGenerationService:
         while True:
             print("Syncing metagraph", flush=True)
             self.metagraph.sync(subtensor=self.subtensor, lite=True)
-            time.sleep(60 * 5)
+            time.sleep(60 * 10)
 
     def check_auth(self, key: str) -> None:
         if key not in self.get_auth_keys():
@@ -205,10 +205,8 @@ class ImageGenerationService:
             response = response.json()
 
             if status_code == 200:
-                if isinstance(response, dict):
-                    output = {"response_dict": response}
-                elif isinstance(response, str):
-                    output = {"image": response}
+                print(f"Received response from validator {hotkey}", flush=True)
+                output = response
 
             if output:
                 today_counter["success"] += 1
