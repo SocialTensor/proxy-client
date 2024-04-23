@@ -2,7 +2,6 @@ import argparse
 import asyncio
 import base64
 import io
-import json
 import os
 import random
 from datetime import date
@@ -20,6 +19,10 @@ from pydantic import BaseModel
 from tqdm import tqdm
 from starlette.concurrency import run_in_threadpool
 from threading import Thread
+from pymongo import MongoClient
+
+MONGO_DB_USERNAME = os.getenv("MONGO_DB_USERNAME")
+MONGO_DB_PASSWORD = os.getenv("MONGO_DB_PASSWORD")
 
 
 class Prompt(BaseModel):
@@ -41,16 +44,26 @@ class ValidatorInfo(BaseModel):
 
 
 class ImageGenerationService:
-    def __init__(self, args):
-        self.args = args
+    def __init__(self):
         self.subtensor = bt.subtensor("test")
         self.metagraph = self.subtensor.metagraph(119)
-        self.available_validators: Dict[str, Dict] = self.load_json(
-            "validator_logs.json", {}
+        self.client = MongoClient(
+            f"mongodb://{MONGO_DB_USERNAME}:{MONGO_DB_PASSWORD}@localhost:27017"
         )
+        # verify db connection
+        print(self.client.server_info())
+        if "image_generation_service" not in self.client.list_database_names():
+            print("Creating database", flush=True)
+            self.client["image_generation_service"].create_collection("validators")
+            self.client["image_generation_service"].create_collection("auth_keys")
+            self.client["image_generation_service"].create_collection("private_key")
+        self.db = self.client["image_generation_service"]
+        self.validators_collection = self.db["validators"]
+        self.auth_keys_collection = self.db["auth_keys"]
+        self.available_validators = self.get_available_validators()
         self.filter_validators()
         self.app = FastAPI()
-        self.auth_keys: Dict[str, Dict] = self.load_json("auth_keys.json", {})
+        self.auth_keys = self.get_auth_keys()
         self.private_key = self.load_private_key()
         self.public_key = self.private_key.public_key()
         self.public_key_bytes = self.public_key.public_bytes(
@@ -67,44 +80,44 @@ class ImageGenerationService:
             "/get_credentials", self.get_credentials, methods=["POST"]
         )
         self.app.add_api_route("/generate", self.generate, methods=["POST"])
+        self.app.add_api_route("/get_validators", self.get_validators, methods=["GET"])
         Thread(target=self.sync_metagraph_periodically, daemon=True).start()
         Thread(target=self.recheck_validators, daemon=True).start()
+
+    def sync_db(self):
+        self.available_validators = self.get_available_validators()
+        self.auth_keys = self.get_auth_keys()
 
     def filter_validators(self) -> None:
         for hotkey in list(self.available_validators.keys()):
             self.available_validators[hotkey]["is_active"] = False
             if hotkey not in self.metagraph.hotkeys:
                 print(f"Removing validator {hotkey}", flush=True)
+                self.validators_collection.delete_one({"_id": hotkey})
                 self.available_validators.pop(hotkey)
 
-    def load_json(self, filename: str, default: Dict) -> Dict:
-        filepath = os.path.join(self.args.save_log_dir, filename)
-        if os.path.exists(filepath):
-            with open(filepath, "r") as f:
-                return json.load(f)
-        return default
+    def get_available_validators(self) -> Dict:
+        return {doc["_id"]: doc for doc in self.validators_collection.find()}
 
-    def save_json(self, data: Dict, filename: str) -> None:
-        filepath = os.path.join(self.args.save_log_dir, filename)
-        with open(filepath, "w") as f:
-            json.dump(data, f)
+    def get_auth_keys(self) -> Dict:
+        return {doc["_id"]: doc for doc in self.auth_keys_collection.find()}
 
     def load_private_key(self) -> Ed25519PrivateKey:
-        filepath = os.path.join(self.args.save_log_dir, "private_key.pem")
-        if os.path.exists(filepath):
-            with open(filepath, "rb") as f:
-                return serialization.load_pem_private_key(f.read(), password=None)
+        # Load private key from MongoDB or generate a new one
+        private_key_doc = self.db["private_key"].find_one()
+        if private_key_doc:
+            return serialization.load_pem_private_key(
+                private_key_doc["key"].encode("utf-8"), password=None
+            )
         else:
             print("Generating private key", flush=True)
             private_key = Ed25519PrivateKey.generate()
-            with open(filepath, "wb") as f:
-                f.write(
-                    private_key.private_bytes(
-                        encoding=serialization.Encoding.PEM,
-                        format=serialization.PrivateFormat.PKCS8,
-                        encryption_algorithm=serialization.NoEncryption(),
-                    )
-                )
+            private_key_pem = private_key.private_bytes(
+                encoding=serialization.Encoding.PEM,
+                format=serialization.PrivateFormat.PKCS8,
+                encryption_algorithm=serialization.NoEncryption(),
+            ).decode("utf-8")
+            self.db["private_key"].insert_one({"key": private_key_pem})
             return private_key
 
     def sync_metagraph_periodically(self) -> None:
@@ -114,7 +127,7 @@ class ImageGenerationService:
             time.sleep(60 * 5)
 
     def check_auth(self, key: str) -> None:
-        if key not in self.auth_keys:
+        if key not in self.get_auth_keys():
             raise HTTPException(status_code=401, detail="Invalid authorization key")
 
     async def get_credentials(
@@ -140,7 +153,9 @@ class ImageGenerationService:
             f"Found validator\n- hotkey: {hotkey}, uid: {uid}, endpoint: {new_validator['generate_endpoint']}",
             flush=True,
         )
-        self.save_json(self.available_validators, "validator_logs.json")
+        self.validators_collection.update_one(
+            {"_id": hotkey}, {"$set": new_validator}, upsert=True
+        )
 
         return {
             "message": self.message,
@@ -148,6 +163,7 @@ class ImageGenerationService:
         }
 
     async def generate(self, prompt: Prompt) -> Dict:
+        self.sync_db()
         self.check_auth(prompt.key)
 
         hotkeys = [
@@ -188,20 +204,32 @@ class ImageGenerationService:
             status_code = response.status_code
             response = response.json()
 
-            if status_code != 200:
-                today_counter["failure"] += 1
-            else:
-                output = response
-                today_counter["success"] += 1
+            if status_code == 200:
+                if isinstance(response, dict):
+                    output = {"response_dict": response}
+                elif isinstance(response, str):
+                    output = {"image": response}
 
-            self.save_json(self.available_validators, "validator_logs.json")
-            self.auth_keys[prompt.key].setdefault("request_count", 0)
-            self.auth_keys[prompt.key]["request_count"] += 1
-            self.save_json(self.auth_keys, "auth_keys.json")
+            if output:
+                today_counter["success"] += 1
+            else:
+                today_counter["failure"] += 1
+            try:
+                self.validators_collection.update_one(
+                    {"_id": hotkey}, {"$set": self.available_validators[hotkey]}
+                )
+                self.auth_keys[prompt.key].setdefault("request_count", 0)
+                self.auth_keys[prompt.key]["request_count"] += 1
+                self.auth_keys_collection.update_one(
+                    {"_id": prompt.key}, {"$set": self.auth_keys[prompt.key]}
+                )
+            except Exception as e:
+                print(f"Failed to update validator - MongoDB: {e}", flush=True)
         if not output:
             if not len(self.available_validators):
                 raise HTTPException(status_code=404, detail="No available validators")
             raise HTTPException(status_code=500, detail="All validators failed")
+
         return output
 
     def recheck_validators(self) -> None:
@@ -235,19 +263,8 @@ class ImageGenerationService:
             print("Total validators:", len(self.available_validators), flush=True)
             time.sleep(60 * 5)
 
-    def run(self) -> None:
-        uvicorn.run(self.app, host="0.0.0.0", port=self.args.port)
+    async def get_validators(self) -> List:
+        return list(self.available_validators.keys())
 
 
-def parse_args():
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--port", type=int, default=10003)
-    parser.add_argument("--save_log_dir", type=str, default="./")
-    args, _ = parser.parse_known_args()
-    return args
-
-
-if __name__ == "__main__":
-    args = parse_args()
-    service = ImageGenerationService(args)
-    service.run()
+app = ImageGenerationService()
