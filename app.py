@@ -5,19 +5,15 @@ import io
 import os
 import random
 from datetime import date
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple, Union
 import time
 import bittensor as bt
 import httpx
-import numpy as np
-import uvicorn
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, HTTPException, Request, UploadFile, File
 from PIL import Image
 from pydantic import BaseModel
-from tqdm import tqdm
-from starlette.concurrency import run_in_threadpool
 from threading import Thread
 from pymongo import MongoClient
 
@@ -34,6 +30,32 @@ class Prompt(BaseModel):
     seed: int = -1
     miner_uid: int = -1
     pipeline_params: dict = {}
+
+
+class TextPrompt(BaseModel):
+    key: str
+    prompt_input: str
+    model_name: str
+    pipeline_params: dict = {}
+    seed: int = 0
+
+
+class TextToImage(BaseModel):
+    prompt: str
+    model_name: str
+    aspect_ratio: str = "1:1"
+    negative_prompt: str = ""
+    seed: int = 0
+    advanced_params: dict = {}
+
+
+class ImageToImage(BaseModel):
+    prompt: str
+    model_name: str
+    conditional_image: str
+    negative_prompt: str = ""
+    seed: int = 0
+    advanced_params: dict = {}
 
 
 class ValidatorInfo(BaseModel):
@@ -60,6 +82,7 @@ class ImageGenerationService:
         self.db = self.client["image_generation_service"]
         self.validators_collection = self.db["validators"]
         self.auth_keys_collection = self.db["auth_keys"]
+        self.model_config = self.db["model_config"]
         self.available_validators = self.get_available_validators()
         self.filter_validators()
         self.app = FastAPI()
@@ -81,11 +104,19 @@ class ImageGenerationService:
         )
         self.app.add_api_route("/generate", self.generate, methods=["POST"])
         self.app.add_api_route("/get_validators", self.get_validators, methods=["GET"])
+        self.app.add_api_route("/api/v1/txt2img", self.txt2img_api, methods=["POST"])
+        self.app.add_api_route("/api/v1/img2img", self.img2img_api, methods=["POST"])
+        self.app.add_api_route(
+            "/api/v1/instantid", self.instantid_api, methods=["POST"]
+        )
         Thread(target=self.sync_metagraph_periodically, daemon=True).start()
         Thread(target=self.recheck_validators, daemon=True).start()
 
     def sync_db(self):
-        self.available_validators = self.get_available_validators()
+        new_available_validators = self.get_available_validators()
+        for key, value in new_available_validators.items():
+            if key not in self.available_validators:
+                self.available_validators[key] = value
         self.auth_keys = self.get_auth_keys()
 
     def filter_validators(self) -> None:
@@ -162,10 +193,10 @@ class ImageGenerationService:
             "signature": self.signature,
         }
 
-    async def generate(self, prompt: Prompt) -> Dict:
+    async def generate(self, prompt: Union[Prompt, TextPrompt]):
         self.sync_db()
         self.check_auth(prompt.key)
-
+        print(prompt, flush=True)
         hotkeys = [
             hotkey
             for hotkey, log in self.available_validators.items()
@@ -194,15 +225,28 @@ class ImageGenerationService:
                 str(date.today()), {"success": 0, "failure": 0}
             )
             print(f"Selected validator: {hotkey}, stake: {stake}", flush=True)
-            async with httpx.AsyncClient(
-                timeout=httpx.Timeout(connect=2, timeout=64)
-            ) as client:
-                response = await client.post(
-                    self.available_validators[hotkey]["generate_endpoint"],
-                    json=request_dict,
+            try:
+                start_time = time.time()
+                async with httpx.AsyncClient(
+                    timeout=httpx.Timeout(connect=2, timeout=64)
+                ) as client:
+                    response = await client.post(
+                        self.available_validators[hotkey]["generate_endpoint"],
+                        json=request_dict,
+                    )
+                end_time = time.time()
+                print(
+                    f"Received response from validator {hotkey} in {end_time - start_time:.2f} seconds",
+                    flush=True,
                 )
+            except Exception as e:
+                print(f"Failed to send request to validator {hotkey}: {e}", flush=True)
+                continue
             status_code = response.status_code
-            response = response.json()
+            try:
+                response = response.json()
+            except Exception as e:
+                response = {"error": str(e)}
 
             if status_code == 200:
                 print(f"Received response from validator {hotkey}", flush=True)
@@ -227,7 +271,6 @@ class ImageGenerationService:
             if not len(self.available_validators):
                 raise HTTPException(status_code=404, detail="No available validators")
             raise HTTPException(status_code=500, detail="All validators failed")
-
         return output
 
     def recheck_validators(self) -> None:
@@ -248,6 +291,7 @@ class ImageGenerationService:
                     print(f"Validator {hotkey} responded", flush=True)
                 except Exception as e:
                     print(f"Validator {hotkey} failed to respond: {e}", flush=True)
+            self.check_validator_func = check_validator
 
         while True:
             print("Rechecking validators", flush=True)
@@ -259,10 +303,162 @@ class ImageGenerationService:
             for thread in threads:
                 thread.join()
             print("Total validators:", len(self.available_validators), flush=True)
+            # update validators to mongodb
+            for hotkey in list(self.available_validators.keys()):
+                self.validators_collection.update_one(
+                    {"_id": hotkey}, {"$set": self.available_validators[hotkey]}
+                )
             time.sleep(60 * 5)
 
     async def get_validators(self) -> List:
         return list(self.available_validators.keys())
+
+    async def txt2img_api(self, request: Request, data: TextToImage):
+        # Get API_KEY from header
+        api_key = request.headers.get("API_KEY")
+        self.check_auth(api_key)
+        prompt = data.prompt
+        model_name = data.model_name
+        aspect_ratio = data.aspect_ratio
+        negative_prompt = data.negative_prompt
+        seed = data.seed
+        if seed == 0:
+            seed = random.randint(0, 1000000)
+        advanced_params = data.advanced_params
+        ratio_to_size = self.model_config.find_one({"name": "ratio-to-size"})["data"]
+        if aspect_ratio not in ratio_to_size:
+            raise HTTPException(status_code=404, detail="Aspect ratio not found")
+        model_list = self.model_config.find_one({"name": "model_list"})["data"]
+        if model_name not in model_list:
+            raise HTTPException(status_code=404, detail="Model not found")
+        supporting_pipelines = model_list[model_name].get("supporting_pipelines", [])
+        if "txt2img" not in supporting_pipelines:
+            raise HTTPException(
+                status_code=404, detail="Model does not support txt2img pipeline"
+            )
+        width, height = ratio_to_size[aspect_ratio]
+
+        if model_name == "GoJourney":
+            prompt = f"{prompt} --{aspect_ratio} --v 6"
+        generate_data = {
+            "key": api_key,
+            "prompt": prompt,
+            "model_name": model_name,
+            "pipeline_type": "txt2img",
+            "seed": seed,
+            "pipeline_params": {
+                "width": width,
+                "height": height,
+                "negative_prompt": negative_prompt,
+                **advanced_params,
+            },
+        }
+        return await self.generate(Prompt(**generate_data))
+
+    async def img2img_api(self, request: Request, data: ImageToImage):
+        # Get API_KEY from header
+        api_key = request.headers.get("API_KEY")
+        self.check_auth(api_key)
+        prompt = data.prompt
+        model_name = data.model_name
+        negative_prompt = data.negative_prompt
+        seed = data.seed
+        conditional_image = data.conditional_image
+
+        if seed == 0:
+            seed = random.randint(0, 1000000)
+        advanced_params = data.advanced_params
+        model_list = self.model_config.find_one({"name": "model_list"})
+        if model_name not in model_list:
+            raise HTTPException(status_code=404, detail="Model not found")
+        supporting_pipelines = model_list[model_name].get("supporting_pipelines", [])
+        if "img2img" not in supporting_pipelines:
+            raise HTTPException(
+                status_code=404, detail="Model does not support img2img pipeline"
+            )
+
+        conditional_image: Image.Image = self.base64_to_pil_image(conditional_image)
+        conditional_image = self.resize_divisible(conditional_image, 1024, 16)
+        conditional_image = self.pil_image_to_base64(conditional_image)
+
+        generate_data = {
+            "key": api_key,
+            "prompt": prompt,
+            "model_name": model_name,
+            "conditional_image": conditional_image,
+            "pipeline_type": "img2img",
+            "seed": seed,
+            "pipeline_params": {
+                "negative_prompt": negative_prompt,
+                **advanced_params,
+            },
+        }
+        return await self.generate(generate_data)
+
+    async def instantid_api(self, request: Request, data: ImageToImage):
+        # Get API_KEY from header
+        api_key = request.headers.get("API_KEY")
+        self.check_auth(api_key)
+        prompt = data.prompt
+        model_name = data.model_name
+        negative_prompt = data.negative_prompt
+        seed = data.seed
+        conditional_image = data.conditional_image
+
+        if seed == 0:
+            seed = random.randint(0, 1000000)
+        advanced_params = data.advanced_params
+        model_list = self.model_config.find_one({"name": "model_list"})
+        if model_name not in model_list:
+            raise HTTPException(status_code=404, detail="Model not found")
+        supporting_pipelines = model_list[model_name].get("supporting_pipelines", [])
+        if "instantid" not in supporting_pipelines:
+            raise HTTPException(
+                status_code=404, detail="Model does not support instantid pipeline"
+            )
+
+        conditional_image: Image.Image = self.base64_to_pil_image(conditional_image)
+        conditional_image = self.resize_divisible(conditional_image, 1024, 16)
+        conditional_image = self.pil_image_to_base64(conditional_image)
+
+        generate_data = {
+            "key": api_key,
+            "prompt": prompt,
+            "model_name": model_name,
+            "conditional_image": conditional_image,
+            "pipeline_type": "instantid",
+            "seed": seed,
+            "pipeline_params": {
+                "negative_prompt": negative_prompt,
+                **advanced_params,
+            },
+        }
+        return await self.generate(generate_data)
+
+    def base64_to_pil_image(self, base64_image):
+        image = base64.b64decode(base64_image)
+        image = io.BytesIO(image)
+        image = Image.open(image)
+        return image
+
+    def pil_image_to_base64(self, image: Image.Image, format="JPEG") -> str:
+        if format not in ["JPEG", "PNG"]:
+            format = "JPEG"
+        image_stream = io.BytesIO()
+        image.save(image_stream, format=format)
+        base64_image = base64.b64encode(image_stream.getvalue()).decode("utf-8")
+        return base64_image
+
+    def resize_divisible(image, max_size=1024, divisible=16):
+        W, H = image.size
+        if W > H:
+            W, H = max_size, int(max_size * H / W)
+        else:
+            W, H = int(max_size * W / H), max_size
+        W = W - W % divisible
+        H = H - H % divisible
+        image = image.resize((W, H))
+        return image
 
 
 app = ImageGenerationService()
