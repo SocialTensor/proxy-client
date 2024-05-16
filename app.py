@@ -196,16 +196,24 @@ class ImageGenerationService:
     async def generate(self, prompt: Union[Prompt, TextPrompt]):
         self.sync_db()
         self.check_auth(prompt.key)
-        print(prompt, flush=True)
         hotkeys = [
             hotkey
             for hotkey, log in self.available_validators.items()
             if log["is_active"]
         ]
-        stakes = [
-            self.metagraph.total_stake[self.metagraph.hotkeys.index(hotkey)].item() + 1
-            for hotkey in hotkeys
-        ]
+        stakes = []
+        for hotkey in hotkeys:
+            try:
+                v_stake = (
+                    self.metagraph.total_stake[
+                        self.metagraph.hotkeys.index(hotkey)
+                    ].item()
+                    + 1
+                )
+                stakes.append(v_stake)
+            except:
+                print("Warning, hotkey not in self.metagraph.total_stake", hotkey)
+
         validators = list(zip(hotkeys, stakes))
 
         request_dict = {
@@ -291,7 +299,10 @@ class ImageGenerationService:
                     print(f"Validator {hotkey} responded", flush=True)
                 except Exception as e:
                     print(f"Validator {hotkey} failed to respond: {e}", flush=True)
-            self.check_validator_func = check_validator
+                    # Set is_active to False if validator is not responding
+                    self.available_validators[hotkey]["is_active"] = False
+            self.check_validator_func 
+            = check_validator
 
         while True:
             print("Rechecking validators", flush=True)
@@ -336,15 +347,19 @@ class ImageGenerationService:
             raise HTTPException(
                 status_code=404, detail="Model does not support txt2img pipeline"
             )
+        default_params = model_list[model_name].get("default_params", {})
         width, height = ratio_to_size[aspect_ratio]
 
         if model_name == "GoJourney":
-            prompt = f"{prompt} --{aspect_ratio} --v 6"
+            prompt = f"{prompt} --ar {aspect_ratio} --v 6"
+            pipeline_type = "gojourney"
+        else:
+            pipeline_type = "txt2img"
         generate_data = {
             "key": api_key,
             "prompt": prompt,
             "model_name": model_name,
-            "pipeline_type": "txt2img",
+            "pipeline_type": pipeline_type,
             "seed": seed,
             "pipeline_params": {
                 "width": width,
@@ -353,6 +368,8 @@ class ImageGenerationService:
                 **advanced_params,
             },
         }
+        for key, value in default_params.items():
+            generate_data["pipeline_params"][key] = value
         return await self.generate(Prompt(**generate_data))
 
     async def img2img_api(self, request: Request, data: ImageToImage):
@@ -368,7 +385,7 @@ class ImageGenerationService:
         if seed == 0:
             seed = random.randint(0, 1000000)
         advanced_params = data.advanced_params
-        model_list = self.model_config.find_one({"name": "model_list"})
+        model_list = self.model_config.find_one({"name": "model_list"})["data"]
         if model_name not in model_list:
             raise HTTPException(status_code=404, detail="Model not found")
         supporting_pipelines = model_list[model_name].get("supporting_pipelines", [])
@@ -376,7 +393,7 @@ class ImageGenerationService:
             raise HTTPException(
                 status_code=404, detail="Model does not support img2img pipeline"
             )
-
+        default_params = model_list[model_name].get("default_params", {})
         conditional_image: Image.Image = self.base64_to_pil_image(conditional_image)
         conditional_image = self.resize_divisible(conditional_image, 1024, 16)
         conditional_image = self.pil_image_to_base64(conditional_image)
@@ -393,7 +410,11 @@ class ImageGenerationService:
                 **advanced_params,
             },
         }
-        return await self.generate(generate_data)
+
+        for key, value in default_params.items():
+            generate_data["pipeline_params"][key] = value
+
+        return await self.generate(Prompt(**generate_data))
 
     async def instantid_api(self, request: Request, data: ImageToImage):
         # Get API_KEY from header
@@ -408,7 +429,7 @@ class ImageGenerationService:
         if seed == 0:
             seed = random.randint(0, 1000000)
         advanced_params = data.advanced_params
-        model_list = self.model_config.find_one({"name": "model_list"})
+        model_list = self.model_config.find_one({"name": "model_list"})["data"]
         if model_name not in model_list:
             raise HTTPException(status_code=404, detail="Model not found")
         supporting_pipelines = model_list[model_name].get("supporting_pipelines", [])
@@ -416,6 +437,7 @@ class ImageGenerationService:
             raise HTTPException(
                 status_code=404, detail="Model does not support instantid pipeline"
             )
+        default_params = model_list[model_name].get("default_params", {})
 
         conditional_image: Image.Image = self.base64_to_pil_image(conditional_image)
         conditional_image = self.resize_divisible(conditional_image, 1024, 16)
@@ -433,7 +455,10 @@ class ImageGenerationService:
                 **advanced_params,
             },
         }
-        return await self.generate(generate_data)
+        for key, value in default_params.items():
+            generate_data["pipeline_params"][key] = value
+
+        return await self.generate(Prompt(**generate_data))
 
     def base64_to_pil_image(self, base64_image):
         image = base64.b64decode(base64_image)
@@ -449,7 +474,7 @@ class ImageGenerationService:
         base64_image = base64.b64encode(image_stream.getvalue()).decode("utf-8")
         return base64_image
 
-    def resize_divisible(image, max_size=1024, divisible=16):
+    def resize_divisible(self, image, max_size=1024, divisible=16):
         W, H = image.size
         if W > H:
             W, H = max_size, int(max_size * H / W)
