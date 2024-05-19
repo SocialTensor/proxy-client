@@ -201,18 +201,8 @@ class ImageGenerationService:
             for hotkey, log in self.available_validators.items()
             if log["is_active"]
         ]
-        stakes = []
-        for hotkey in hotkeys:
-            try:
-                v_stake = (
-                    self.metagraph.total_stake[
-                        self.metagraph.hotkeys.index(hotkey)
-                    ].item()
-                    + 1
-                )
-                stakes.append(v_stake)
-            except:
-                print("Warning, hotkey not in self.metagraph.total_stake", hotkey)
+        hotkeys = [hotkey for hotkey in hotkeys if hotkey in self.metagraph.hotkeys]
+        stakes = [self.metagraph.total_stake[self.metagraph.hotkeys.index(hotkey)] for hotkey in hotkeys]
 
         validators = list(zip(hotkeys, stakes))
 
@@ -301,8 +291,6 @@ class ImageGenerationService:
                     print(f"Validator {hotkey} failed to respond: {e}", flush=True)
                     # Set is_active to False if validator is not responding
                     self.available_validators[hotkey]["is_active"] = False
-            self.check_validator_func 
-            = check_validator
 
         while True:
             print("Rechecking validators", flush=True)
