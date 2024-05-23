@@ -192,10 +192,44 @@ class ImageGenerationService:
             "message": self.message,
             "signature": self.signature,
         }
+    
+    async def check_prompt(self, prompt: str):
+        try:
+            endpoint = "https://api.midjourneyapi.xyz/mj/v2/validation"
+            data = {
+                "prompt": prompt,
+            }
+            async with httpx.AsyncClient(timeout=4) as client:
+                response = await client.post(endpoint, json=data)
+            response = response.json()
+            print(response, flush=True)
+            if not response['ErrorMessage']:
+                return True, ""
+            else:
+                print(response['ErrorMessage'], flush=True)
+                return False, response['ErrorMessage']
+        except Exception as e:
+            print(e, flush=True)
+            return True, ""
+
+        
 
     async def generate(self, prompt: Union[Prompt, TextPrompt]):
         self.sync_db()
         self.check_auth(prompt.key)
+        if isinstance(prompt, Prompt):
+            is_safe_prompt, reason = await self.check_prompt(prompt.prompt)
+            if not is_safe_prompt:
+                return HTTPException(status_code=406, detail=f"Prompt checking: {reason}")
+            if prompt.pipeline_params.get("use_expansion", False):
+                try:
+                    async with httpx.AsyncClient(timeout=4) as client:
+                        response = await client.post("http://213.173.102.215:10354/api/prompt_expansion", json={"prompt": prompt.prompt})
+                    if response.status_code == 200:
+                        prompt.prompt = response.json()
+                except Exception as e:
+                    print(e, flush=True)
+
         hotkeys = [
             hotkey
             for hotkey, log in self.available_validators.items()
