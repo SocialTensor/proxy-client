@@ -24,3 +24,8 @@ source myenv/bin/activate
 ```bash
 pip install -r requirements.txt
 ```
+
+4. Run the application
+```bash
+uvicorn app:app.app --reload
+```

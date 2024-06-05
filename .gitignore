@@ -2,3 +2,6 @@
 *.pem
 data
 myenv
+__pycache__
+.DS_Store
+output_*.png

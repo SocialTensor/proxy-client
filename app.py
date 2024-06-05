@@ -69,8 +69,10 @@ class ImageGenerationService:
     def __init__(self):
         self.subtensor = bt.subtensor("finney")
         self.metagraph = self.subtensor.metagraph(23)
+        # mongoDBConnectUri = f"mongodb://{MONGO_DB_USERNAME}:{MONGO_DB_PASSWORD}@localhost:27017"
+        mongoDBConnectUri = f"mongodb://localhost:27017"
         self.client = MongoClient(
-            f"mongodb://{MONGO_DB_USERNAME}:{MONGO_DB_PASSWORD}@localhost:27017"
+            mongoDBConnectUri
         )
         # verify db connection
         print(self.client.server_info())
@@ -230,10 +232,11 @@ class ImageGenerationService:
                 except Exception as e:
                     print(e, flush=True)
 
+        validatorItems = self.available_validators.items()
         hotkeys = [
             hotkey
-            for hotkey, log in self.available_validators.items()
-            if log["is_active"]
+            for hotkey, log in validatorItems
+            # if log["is_active"]
         ]
         hotkeys = [hotkey for hotkey in hotkeys if hotkey in self.metagraph.hotkeys]
         stakes = [self.metagraph.total_stake[self.metagraph.hotkeys.index(hotkey)] for hotkey in hotkeys]
