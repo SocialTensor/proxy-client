@@ -8,18 +8,20 @@ import time
 from PIL import Image
 from datetime import datetime
 
+from constants import ModelName
+
 # endpoint = "http://nicheimage.nichetensor.com/api/v1"
 endpoint = "http://localhost:8000/api/v1"
 
 headers = {
-    "API_KEY": "capricorn_feb",
+    "API_KEY": "poih34p89bewrfgf3",
 }
     
 def base64_to_pil_image(base64_image):
-        image = base64.b64decode(base64_image)
-        image = io.BytesIO(image)
-        image = Image.open(image)
-        return image
+    image = base64.b64decode(base64_image)
+    image = io.BytesIO(image)
+    image = Image.open(image)
+    return image
 
 def image_grid(imgs, rows, cols):
     assert len(imgs) == rows*cols
@@ -52,19 +54,55 @@ def save_img_to_disk(image):
 
     image.save(filename)
     
+def fetch_GoJourney(task_id):
+    endpoint = "https://api.midjourneyapi.xyz/mj/v2/fetch"
+    data = {"task_id": task_id}
+    response = requests.post(endpoint, json=data)
+    return response.json()
+
 def txt2img():
-    data = {
-        "prompt": "photo, man",
-        "model_name": "JuggernautXL",
-        "seed": 0,
-        "aspect_ratio": "19:13",
-    }
-    response = requests.post(endpoint + "/txt2img", json=data, headers=headers)
-    response.raise_for_status()
-    response = response.json()
-    base64_image = response["image"]
-    image = base64_to_pil_image(base64_image)
-    save_img_to_disk(image)
+    try:
+        data = {
+            "prompt": "photo, man",
+            "model_name": ModelName.FACE_TO_MANY.value,
+            "seed": 0,
+            "aspect_ratio": "19:13",
+        }
+        if data["model_name"] == ModelName.FACE_TO_MANY.value:
+            print(f'===> {ModelName.FACE_TO_MANY.value} model does not support txt2img. Use img2img instead.')
+            return
+        response = requests.post(endpoint + "/txt2img", json=data, headers=headers)
+            
+        response.raise_for_status()
+        response = response.json()
+        print('===> response', response)
+        if data["model_name"] == ModelName.GO_JOURNEY.value:
+            task_response = response["response_dict"]
+            task_status = task_response["status"]
+            task_id = task_response["task_id"]
+            img_url = ''
+            if task_status == "failed":
+                return
+            while True:
+                task_response = fetch_GoJourney(task_id)
+                if task_response["status"] == "finished":
+                    img_url = task_response["task_result"]["image_url"]
+                    print("===> Done")
+                    break
+                else:
+                    print("===> Waiting for the image to be ready...")
+                time.sleep(2)
+            if img_url and img_url != '':
+                image = Image.open(requests.get(img_url, stream=True).raw)
+                save_img_to_disk(image)
+        else:
+            base64_image = response["image"]
+            image = base64_to_pil_image(base64_image)
+            save_img_to_disk(image)
+    except requests.exceptions.HTTPError as err:
+        print(f"HTTP error occurred: {err}")
+    except requests.exceptions.RequestException as err:
+        print(f"Error occurred: {err}")
     
 def resize_divisible(image, max_size=1024, divisible=16):
     W, H = image.size
@@ -97,5 +135,5 @@ def img2img():
     save_img_to_disk(image)
     
 if __name__ == "__main__":
-    # txt2img()
-    img2img()
+    txt2img()
+    # img2img()

@@ -5,3 +5,4 @@ myenv
 __pycache__
 .DS_Store
 output_*.png
+schema-test.py

@@ -16,10 +16,11 @@ from PIL import Image
 from pydantic import BaseModel
 from threading import Thread
 from pymongo import MongoClient
+from enum import Enum
+from constants import ModelName, CollectionName
 
 MONGO_DB_USERNAME = os.getenv("MONGO_DB_USERNAME")
 MONGO_DB_PASSWORD = os.getenv("MONGO_DB_PASSWORD")
-
 
 class Prompt(BaseModel):
     key: str
@@ -78,13 +79,13 @@ class ImageGenerationService:
         print(self.client.server_info())
         if "image_generation_service" not in self.client.list_database_names():
             print("Creating database", flush=True)
-            self.client["image_generation_service"].create_collection("validators")
-            self.client["image_generation_service"].create_collection("auth_keys")
-            self.client["image_generation_service"].create_collection("private_key")
+            self.client["image_generation_service"].create_collection(CollectionName.VALIDATORS.value)
+            self.client["image_generation_service"].create_collection(CollectionName.AUTH_KEYS.value)
+            self.client["image_generation_service"].create_collection(CollectionName.PRIVATE_KEY.value)
         self.db = self.client["image_generation_service"]
-        self.validators_collection = self.db["validators"]
-        self.auth_keys_collection = self.db["auth_keys"]
-        self.model_config = self.db["model_config"]
+        self.validators_collection = self.db[CollectionName.VALIDATORS.value]
+        self.auth_keys_collection = self.db[CollectionName.AUTH_KEYS.value]
+        self.model_config = self.db[CollectionName.MODEL_CONFIG.value]
         self.available_validators = self.get_available_validators()
         self.filter_validators()
         self.app = FastAPI()
@@ -94,6 +95,7 @@ class ImageGenerationService:
         self.public_key_bytes = self.public_key.public_bytes(
             encoding=serialization.Encoding.Raw, format=serialization.PublicFormat.Raw
         )
+        self.model_list = self.model_config.find_one({"name": "model_list"})["data"]
         self.message = "image-generating-subnet"
         self.signature = base64.b64encode(
             self.private_key.sign(self.message.encode("utf-8"))
@@ -137,7 +139,7 @@ class ImageGenerationService:
 
     def load_private_key(self) -> Ed25519PrivateKey:
         # Load private key from MongoDB or generate a new one
-        private_key_doc = self.db["private_key"].find_one()
+        private_key_doc = self.db[CollectionName.PRIVATE_KEY.value].find_one()
         if private_key_doc:
             return serialization.load_pem_private_key(
                 private_key_doc["key"].encode("utf-8"), password=None
@@ -150,7 +152,7 @@ class ImageGenerationService:
                 format=serialization.PrivateFormat.PKCS8,
                 encryption_algorithm=serialization.NoEncryption(),
             ).decode("utf-8")
-            self.db["private_key"].insert_one({"key": private_key_pem})
+            self.db[CollectionName.PRIVATE_KEY.value].insert_one({"key": private_key_pem})
             return private_key
 
     def sync_metagraph_periodically(self) -> None:
@@ -217,6 +219,11 @@ class ImageGenerationService:
         
 
     async def generate(self, prompt: Union[Prompt, TextPrompt]):
+        if prompt.model_name not in self.model_list:
+            raise HTTPException(status_code=404, detail="Model not found")
+        if self.auth_keys[prompt.key]["credit"] < self.model_list[prompt.model_name].get("credit_cost", 1):
+            raise HTTPException(status_code=403, detail="Run out of credit")
+                
         self.sync_db()
         self.check_auth(prompt.key)
         if isinstance(prompt, Prompt):
@@ -297,6 +304,9 @@ class ImageGenerationService:
                 )
                 self.auth_keys[prompt.key].setdefault("request_count", 0)
                 self.auth_keys[prompt.key]["request_count"] += 1
+                
+                self.auth_keys[prompt.key]["credit"] -= self.model_list[prompt.model_name].get("credit_cost", 1)
+                
                 self.auth_keys_collection.update_one(
                     {"_id": prompt.key}, {"$set": self.auth_keys[prompt.key]}
                 )
@@ -363,19 +373,18 @@ class ImageGenerationService:
         advanced_params = data.advanced_params
         ratio_to_size = self.model_config.find_one({"name": "ratio-to-size"})["data"]
         if aspect_ratio not in ratio_to_size:
-            raise HTTPException(status_code=404, detail="Aspect ratio not found")
-        model_list = self.model_config.find_one({"name": "model_list"})["data"]
-        if model_name not in model_list:
-            raise HTTPException(status_code=404, detail="Model not found")
-        supporting_pipelines = model_list[model_name].get("supporting_pipelines", [])
+            raise HTTPException(status_code=400, detail="Aspect ratio not found")
+        if model_name not in self.model_list:
+            raise HTTPException(status_code=400, detail="Model not found")
+        supporting_pipelines = self.model_list[model_name].get("supporting_pipelines", [])
         if "txt2img" not in supporting_pipelines:
             raise HTTPException(
-                status_code=404, detail="Model does not support txt2img pipeline"
+                status_code=400, detail="Model does not support txt2img pipeline"
             )
-        default_params = model_list[model_name].get("default_params", {})
+        default_params = self.model_list[model_name].get("default_params", {})
         width, height = ratio_to_size[aspect_ratio]
 
-        if model_name == "GoJourney":
+        if model_name == ModelName.GO_JOURNEY.value:
             prompt = f"{prompt} --ar {aspect_ratio} --v 6"
             pipeline_type = "gojourney"
         else:
@@ -410,15 +419,14 @@ class ImageGenerationService:
         if seed == 0:
             seed = random.randint(0, 1000000)
         advanced_params = data.advanced_params
-        model_list = self.model_config.find_one({"name": "model_list"})["data"]
-        if model_name not in model_list:
+        if model_name not in self.model_list:
             raise HTTPException(status_code=404, detail="Model not found")
-        supporting_pipelines = model_list[model_name].get("supporting_pipelines", [])
+        supporting_pipelines = self.model_list[model_name].get("supporting_pipelines", [])
         if "img2img" not in supporting_pipelines:
             raise HTTPException(
                 status_code=404, detail="Model does not support img2img pipeline"
             )
-        default_params = model_list[model_name].get("default_params", {})
+        default_params = self.model_list[model_name].get("default_params", {})
         conditional_image: Image.Image = self.base64_to_pil_image(conditional_image)
         conditional_image = self.resize_divisible(conditional_image, 1024, 16)
         conditional_image = self.pil_image_to_base64(conditional_image)
@@ -454,15 +462,14 @@ class ImageGenerationService:
         if seed == 0:
             seed = random.randint(0, 1000000)
         advanced_params = data.advanced_params
-        model_list = self.model_config.find_one({"name": "model_list"})["data"]
-        if model_name not in model_list:
+        if model_name not in self.model_list:
             raise HTTPException(status_code=404, detail="Model not found")
-        supporting_pipelines = model_list[model_name].get("supporting_pipelines", [])
+        supporting_pipelines = self.model_list[model_name].get("supporting_pipelines", [])
         if "instantid" not in supporting_pipelines:
             raise HTTPException(
                 status_code=404, detail="Model does not support instantid pipeline"
             )
-        default_params = model_list[model_name].get("default_params", {})
+        default_params = self.model_list[model_name].get("default_params", {})
 
         conditional_image: Image.Image = self.base64_to_pil_image(conditional_image)
         conditional_image = self.resize_divisible(conditional_image, 1024, 16)
