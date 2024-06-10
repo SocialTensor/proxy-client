@@ -1,4 +1,4 @@
-bittensor==7.0.0
+bittensor==6.9.3
 cryptography==42.0.0
 Pillow==10.1.0
 Requests==2.31.0
