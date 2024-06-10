@@ -16,6 +16,17 @@ from PIL import Image
 from pydantic import BaseModel
 from threading import Thread
 from pymongo import MongoClient
+from PIL import Image
+
+def pil_image_to_base64(image: Image.Image, format="JPEG") -> str:
+    if format not in ["JPEG", "PNG"]:
+        format = "JPEG"
+    image_stream = io.BytesIO()
+    image = image.convert("RGB")
+    image.save(image_stream, format=format)
+    base64_image = base64.b64encode(image_stream.getvalue()).decode("utf-8")
+    return base64_image
+
 
 MONGO_DB_USERNAME = os.getenv("MONGO_DB_USERNAME")
 MONGO_DB_PASSWORD = os.getenv("MONGO_DB_PASSWORD")
@@ -392,7 +403,15 @@ class ImageGenerationService:
         }
         for key, value in default_params.items():
             generate_data["pipeline_params"][key] = value
-        return await self.generate(Prompt(**generate_data))
+        output = await self.generate(Prompt(**generate_data))
+        if model_name == "DallE":
+            image_url = output['response_dict']['url']
+            image = Image.open(requests.get(image_url, stream=True).raw)
+            base64_image = pil_image_to_base64(image)
+            output['image'] = base64_image
+        
+        return output
+
 
     async def img2img_api(self, request: Request, data: ImageToImage):
         # Get API_KEY from header
