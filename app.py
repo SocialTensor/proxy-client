@@ -2,6 +2,7 @@ import asyncio
 import base64
 import io
 import os
+import requests
 import random
 from datetime import date
 from typing import Dict, List, Union
@@ -18,12 +19,23 @@ from pymongo import MongoClient
 from constants import ModelName, CollectionName
 from slowapi import Limiter
 from slowapi.util import get_remote_address
+from prometheus_fastapi_instrumentator import Instrumentator 
+from PIL import Image
 
 def get_api_key(request: Request):
     return request.headers.get("API_KEY", get_remote_address(request))
 
 limiter = Limiter(key_func=get_api_key)
-    
+
+def pil_image_to_base64(image: Image.Image, format="JPEG") -> str:
+    if format not in ["JPEG", "PNG"]:
+        format = "JPEG"
+    image_stream = io.BytesIO()
+    image = image.convert("RGB")
+    image.save(image_stream, format=format)
+    base64_image = base64.b64encode(image_stream.getvalue()).decode("utf-8")
+    return base64_image
+
 MONGO_DB_USERNAME = os.getenv("MONGO_DB_USERNAME")
 MONGO_DB_PASSWORD = os.getenv("MONGO_DB_PASSWORD")
 
@@ -117,6 +129,7 @@ class ImageGenerationService:
         # self.app.add_api_route(
         #     "/api/v1/instantid", self.instantid_api, methods=["POST"]
         # )
+        Instrumentator().instrument(self.app).expose(self.app)
         Thread(target=self.sync_metagraph_periodically, daemon=True).start()
         Thread(target=self.recheck_validators, daemon=True).start()
 
@@ -408,7 +421,15 @@ class ImageGenerationService:
         }
         for key, value in default_params.items():
             generate_data["pipeline_params"][key] = value
-        return await self.generate(Prompt(**generate_data))
+        output = await self.generate(Prompt(**generate_data))
+        if model_name == "DallE":
+            image_url = output['response_dict']['url']
+            image = Image.open(requests.get(image_url, stream=True).raw)
+            base64_image = pil_image_to_base64(image)
+            output['image'] = base64_image
+        
+        return output
+
 
     async def img2img_api(self, request: Request, data: ImageToImage):
         # Get API_KEY from header

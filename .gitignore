@@ -1,8 +1,12 @@
 *.json
 *.pem
 data
-myenv
-__pycache__
 .DS_Store
 output_*.png
-schema-test.py
+schema
+*.pem
+data
+myvenv
+__pycache__
+prometheus-data
+fake*
