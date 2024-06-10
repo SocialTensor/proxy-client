@@ -1,0 +1,43 @@
+version: '3'
+services: 
+  prometheus:
+    image: prom/prometheus
+    user: root
+    ports:
+      - "10009:9090"
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml
+      - ./prometheus-data:/prometheus
+    restart: always
+  grafana:
+    restart: always
+    hostname: grafana
+    image: grafana/grafana:11.0.0-ubuntu
+    ports:
+      - 30003:3000
+    volumes:
+      - ./log/grafana/data:/var/lib/grafana
+      - ./log/grafana/provisioning/dashboards:/etc/grafana/provisioning/dashboards
+      - ./log/grafana/provisioning/datasources:/etc/grafana/provisioning/datasources
+      
+    environment:
+      - GF_SECURITY_ADMIN_USER=${ADMIN_USER:-admin}
+      - GF_SECURITY_ADMIN_PASSWORD=${ADMIN_PASSWORD:-admin}
+      - GF_AUTH_ANONYMOUS_ENABLED=true
+      - GF_USERS_ALLOW_SIGN_UP=false
+    user: "$UID:$GID"
+  node-exporter:
+    image: prom/node-exporter:v1.1.2
+    container_name: node-exporter
+    restart: always
+    volumes:
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /:/rootfs:ro
+    command:
+      - "--path.procfs=/host/proc"
+      - "--path.sysfs=/host/sys"
+      - "--path.rootfs=/rootfs"
+      - "--collector.filesystem.ignored-mount-points='^/(sys|proc|dev|host|etc|rootfs/var/lib/docker/containers|rootfs/var/lib/docker/overlay2|rootfs/run/docker/netns|rootfs/var/lib/docker/aufs)($$|/)'"
+    ports:
+      - "10091:9100"
