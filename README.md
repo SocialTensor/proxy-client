@@ -12,7 +12,7 @@ Reference this [document](https://docs.nichetensor.com/) regarding how this work
 
 1. Create virtual environment
 ```bash
-python3 -m venv myenv
+python3 -m venv myvenv
 ```
 
 2. Activate the virtual environment
