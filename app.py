@@ -17,6 +17,7 @@ from PIL import Image
 from pydantic import BaseModel
 from threading import Thread
 from pymongo import MongoClient
+from prometheus_fastapi_instrumentator import Instrumentator 
 from PIL import Image
 
 def pil_image_to_base64(image: Image.Image, format="JPEG") -> str:
@@ -27,7 +28,6 @@ def pil_image_to_base64(image: Image.Image, format="JPEG") -> str:
     image.save(image_stream, format=format)
     base64_image = base64.b64encode(image_stream.getvalue()).decode("utf-8")
     return base64_image
-
 
 MONGO_DB_USERNAME = os.getenv("MONGO_DB_USERNAME")
 MONGO_DB_PASSWORD = os.getenv("MONGO_DB_PASSWORD")
@@ -121,6 +121,7 @@ class ImageGenerationService:
         self.app.add_api_route(
             "/api/v1/instantid", self.instantid_api, methods=["POST"]
         )
+        Instrumentator().instrument(self.app).expose(self.app)
         Thread(target=self.sync_metagraph_periodically, daemon=True).start()
         Thread(target=self.recheck_validators, daemon=True).start()
 
