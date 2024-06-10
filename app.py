@@ -3,6 +3,7 @@ import asyncio
 import base64
 import io
 import os
+import requests
 import random
 from datetime import date
 from typing import Dict, List, Optional, Tuple, Union
