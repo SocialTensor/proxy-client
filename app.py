@@ -1,24 +1,29 @@
-import argparse
 import asyncio
 import base64
 import io
 import os
 import random
 from datetime import date
-from typing import Dict, List, Optional, Tuple, Union
+from typing import Dict, List, Union
 import time
 import bittensor as bt
 import httpx
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
-from fastapi import FastAPI, HTTPException, Request, UploadFile, File
+from fastapi import FastAPI, HTTPException, Request
 from PIL import Image
 from pydantic import BaseModel
 from threading import Thread
 from pymongo import MongoClient
-from enum import Enum
 from constants import ModelName, CollectionName
+from slowapi import Limiter
+from slowapi.util import get_remote_address
 
+def get_api_key(request: Request):
+    return request.headers.get("API_KEY", get_remote_address(request))
+
+limiter = Limiter(key_func=get_api_key)
+    
 MONGO_DB_USERNAME = os.getenv("MONGO_DB_USERNAME")
 MONGO_DB_PASSWORD = os.getenv("MONGO_DB_PASSWORD")
 
@@ -65,7 +70,6 @@ class ValidatorInfo(BaseModel):
     all_uid_info: dict = {}
     sha: str = ""
 
-
 class ImageGenerationService:
     def __init__(self):
         self.subtensor = bt.subtensor("finney")
@@ -103,16 +107,16 @@ class ImageGenerationService:
 
         self.loop = asyncio.get_event_loop()
 
-        self.app.add_api_route(
-            "/get_credentials", self.get_credentials, methods=["POST"]
-        )
-        self.app.add_api_route("/generate", self.generate, methods=["POST"])
-        self.app.add_api_route("/get_validators", self.get_validators, methods=["GET"])
-        self.app.add_api_route("/api/v1/txt2img", self.txt2img_api, methods=["POST"])
-        self.app.add_api_route("/api/v1/img2img", self.img2img_api, methods=["POST"])
-        self.app.add_api_route(
-            "/api/v1/instantid", self.instantid_api, methods=["POST"]
-        )
+        # self.app.add_api_route(
+        #     "/get_credentials", self.get_credentials, methods=["POST"]
+        # )
+        # self.app.add_api_route("/generate", self.generate, methods=["POST"])
+        # self.app.add_api_route("/get_validators", self.get_validators, methods=["GET"])
+        # self.app.add_api_route("/api/v1/txt2img", self.txt2img_api, methods=["POST"])
+        # self.app.add_api_route("/api/v1/img2img", self.img2img_api, methods=["POST"])
+        # self.app.add_api_route(
+        #     "/api/v1/instantid", self.instantid_api, methods=["POST"]
+        # )
         Thread(target=self.sync_metagraph_periodically, daemon=True).start()
         Thread(target=self.recheck_validators, daemon=True).start()
 
@@ -519,3 +523,34 @@ class ImageGenerationService:
 
 
 app = ImageGenerationService()
+
+
+@app.app.post("/api/v1/txt2img")
+@limiter.limit("2/minute") # Update the rate limit
+async def txt2img_api2(request: Request, data: TextToImage):
+    return await app.txt2img_api(request, data)
+
+@app.app.post("/get_credentials")
+@limiter.limit("2/minute") # Update the rate limit
+async def get_credentials(request: Request, data: TextToImage):
+    return await app.get_credentials(request, data)
+
+@app.app.post("/generate")
+@limiter.limit("2/minute") # Update the rate limit
+async def generate(request: Request, data: TextToImage):
+    return await app.generate(request, data)
+
+@app.app.get("/get_validators")
+@limiter.limit("2/minute") # Update the rate limit
+async def get_validators(request: Request, data: TextToImage):
+    return await app.get_validators(request, data)
+
+@app.app.post("/api/v1/img2img")
+@limiter.limit("2/minute") # Update the rate limit
+async def img2img_api(request: Request, data: TextToImage):
+    return await app.img2img_api(request, data)
+
+@app.app.post("/api/v1/instantid")
+@limiter.limit("2/minute") # Update the rate limit
+async def instantid_api(request: Request, data: TextToImage):
+    return await app.instantid_api(request, data)

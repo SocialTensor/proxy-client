@@ -1,13 +1,11 @@
 import requests
-from tqdm import tqdm
-import random
 from PIL import Image
 import io
 import base64
 import time
 from PIL import Image
 from datetime import datetime
-
+import sys
 from constants import ModelName
 
 # endpoint = "http://nicheimage.nichetensor.com/api/v1"
@@ -60,18 +58,19 @@ def fetch_GoJourney(task_id):
     response = requests.post(endpoint, json=data)
     return response.json()
 
-def txt2img():
+def txt2img(headers=headers):
     try:
         data = {
             "prompt": "photo, man",
-            "model_name": ModelName.FACE_TO_MANY.value,
+            "model_name": ModelName.JUGGERNAUT_XL.value,
             "seed": 0,
             "aspect_ratio": "19:13",
         }
         if data["model_name"] == ModelName.FACE_TO_MANY.value:
             print(f'===> {ModelName.FACE_TO_MANY.value} model does not support txt2img. Use img2img instead.')
             return
-        response = requests.post(endpoint + "/txt2img", json=data, headers=headers)
+        route_str = "/txt2img"
+        response = requests.post(endpoint + route_str, json=data, headers=headers)
             
         response.raise_for_status()
         response = response.json()
@@ -135,5 +134,11 @@ def img2img():
     save_img_to_disk(image)
     
 if __name__ == "__main__":
-    txt2img()
+    # Receiving API_KEY as an argument
+    if (len(sys.argv) > 1):
+        txt2img(headers={
+            "API_KEY": sys.argv[1],
+        })
+    else:
+        txt2img()
     # img2img()
