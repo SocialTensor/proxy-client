@@ -12,7 +12,7 @@ from constants import ModelName
 endpoint = "http://localhost:8000/api/v1"
 
 headers = {
-    "API_KEY": "poih34p89bewrfgf3",
+    "API_KEY": "api-key",
 }
     
 def base64_to_pil_image(base64_image):

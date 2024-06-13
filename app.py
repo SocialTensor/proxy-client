@@ -86,8 +86,8 @@ class ImageGenerationService:
     def __init__(self):
         self.subtensor = bt.subtensor("finney")
         self.metagraph = self.subtensor.metagraph(23)
-        # mongoDBConnectUri = f"mongodb://{MONGO_DB_USERNAME}:{MONGO_DB_PASSWORD}@localhost:27017"
-        mongoDBConnectUri = f"mongodb://localhost:27017"
+        mongoDBConnectUri = f"mongodb://{MONGO_DB_USERNAME}:{MONGO_DB_PASSWORD}@localhost:27017"
+        # mongoDBConnectUri = f"mongodb://localhost:27017"
         self.client = MongoClient(
             mongoDBConnectUri
         )
@@ -119,16 +119,6 @@ class ImageGenerationService:
 
         self.loop = asyncio.get_event_loop()
 
-        # self.app.add_api_route(
-        #     "/get_credentials", self.get_credentials, methods=["POST"]
-        # )
-        # self.app.add_api_route("/generate", self.generate, methods=["POST"])
-        # self.app.add_api_route("/get_validators", self.get_validators, methods=["GET"])
-        # self.app.add_api_route("/api/v1/txt2img", self.txt2img_api, methods=["POST"])
-        # self.app.add_api_route("/api/v1/img2img", self.img2img_api, methods=["POST"])
-        # self.app.add_api_route(
-        #     "/api/v1/instantid", self.instantid_api, methods=["POST"]
-        # )
         Instrumentator().instrument(self.app).expose(self.app)
         Thread(target=self.sync_metagraph_periodically, daemon=True).start()
         Thread(target=self.recheck_validators, daemon=True).start()
@@ -260,7 +250,7 @@ class ImageGenerationService:
         hotkeys = [
             hotkey
             for hotkey, log in validatorItems
-            # if log["is_active"]
+            if log["is_active"]
         ]
         hotkeys = [hotkey for hotkey in hotkeys if hotkey in self.metagraph.hotkeys]
         stakes = [self.metagraph.total_stake[self.metagraph.hotkeys.index(hotkey)] for hotkey in hotkeys]
