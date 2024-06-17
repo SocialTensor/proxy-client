@@ -122,7 +122,14 @@ class ImageGenerationService:
         Instrumentator().instrument(self.app).expose(self.app)
         Thread(target=self.sync_metagraph_periodically, daemon=True).start()
         Thread(target=self.recheck_validators, daemon=True).start()
+        Thread(target=self.update_model_config, daemon=True).start()
 
+    def update_model_config(self):
+        while True:
+            time.sleep(60 * 10)
+            # Fetch new data from MongoDB and update self.model_config
+            self.model_config = self.db[CollectionName.MODEL_CONFIG.value]
+        
     def sync_db(self):
         new_available_validators = self.get_available_validators()
         for key, value in new_available_validators.items():
