@@ -1,5 +1,8 @@
 from enum import Enum
 
+# UPDATE THIS WITH THE REQUIREMENT
+API_RATE_LIMIT = "2/minute" # 2 requests per minute for the API. 
+
 # Create enum for the models
 class ModelName(Enum):
   JUGGERNAUT_XL = "JuggernautXL"

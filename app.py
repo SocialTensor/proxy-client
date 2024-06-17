@@ -16,10 +16,10 @@ from PIL import Image
 from pydantic import BaseModel
 from threading import Thread
 from pymongo import MongoClient
-from constants import ModelName, CollectionName
+from constants import API_RATE_LIMIT, ModelName, CollectionName
 from slowapi import Limiter
 from slowapi.util import get_remote_address
-from prometheus_fastapi_instrumentator import Instrumentator 
+from prometheus_fastapi_instrumentator import Instrumentator
 from PIL import Image
 
 def get_api_key(request: Request):
@@ -35,6 +35,7 @@ def pil_image_to_base64(image: Image.Image, format="JPEG") -> str:
     image.save(image_stream, format=format)
     base64_image = base64.b64encode(image_stream.getvalue()).decode("utf-8")
     return base64_image
+
 
 MONGO_DB_USERNAME = os.getenv("MONGO_DB_USERNAME")
 MONGO_DB_PASSWORD = os.getenv("MONGO_DB_PASSWORD")
@@ -210,7 +211,7 @@ class ImageGenerationService:
             "message": self.message,
             "signature": self.signature,
         }
-    
+
     async def check_prompt(self, prompt: str):
         try:
             endpoint = "https://api.midjourneyapi.xyz/mj/v2/validation"
@@ -221,16 +222,14 @@ class ImageGenerationService:
                 response = await client.post(endpoint, json=data)
             response = response.json()
             print(response, flush=True)
-            if not response['ErrorMessage']:
+            if not response["ErrorMessage"]:
                 return True, ""
             else:
-                print(response['ErrorMessage'], flush=True)
-                return False, response['ErrorMessage']
+                print(response["ErrorMessage"], flush=True)
+                return False, response["ErrorMessage"]
         except Exception as e:
             print(e, flush=True)
             return True, ""
-
-        
 
     async def generate(self, prompt: Union[Prompt, TextPrompt]):
         if prompt.model_name not in self.model_list:
@@ -243,11 +242,16 @@ class ImageGenerationService:
         if isinstance(prompt, Prompt):
             is_safe_prompt, reason = await self.check_prompt(prompt.prompt)
             if not is_safe_prompt:
-                return HTTPException(status_code=406, detail=f"Prompt checking: {reason}")
+                return HTTPException(
+                    status_code=406, detail=f"Prompt checking: {reason}"
+                )
             if prompt.pipeline_params.get("use_expansion", False):
                 try:
                     async with httpx.AsyncClient(timeout=4) as client:
-                        response = await client.post("http://213.173.102.215:10354/api/prompt_expansion", json={"prompt": prompt.prompt})
+                        response = await client.post(
+                            "http://213.173.102.215:10354/api/prompt_expansion",
+                            json={"prompt": prompt.prompt},
+                        )
                     if response.status_code == 200:
                         prompt.prompt = response.json()
                 except Exception as e:
@@ -260,7 +264,10 @@ class ImageGenerationService:
             if log["is_active"]
         ]
         hotkeys = [hotkey for hotkey in hotkeys if hotkey in self.metagraph.hotkeys]
-        stakes = [self.metagraph.total_stake[self.metagraph.hotkeys.index(hotkey)] for hotkey in hotkeys]
+        stakes = [
+            self.metagraph.total_stake[self.metagraph.hotkeys.index(hotkey)]
+            for hotkey in hotkeys
+        ]
 
         validators = list(zip(hotkeys, stakes))
 
@@ -420,13 +427,12 @@ class ImageGenerationService:
             generate_data["pipeline_params"][key] = value
         output = await self.generate(Prompt(**generate_data))
         if model_name == "DallE":
-            image_url = output['response_dict']['url']
+            image_url = output["response_dict"]["url"]
             image = Image.open(requests.get(image_url, stream=True).raw)
             base64_image = pil_image_to_base64(image)
-            output['image'] = base64_image
-        
-        return output
+            output["image"] = base64_image
 
+        return output
 
     async def img2img_api(self, request: Request, data: ImageToImage):
         # Get API_KEY from header
@@ -514,6 +520,50 @@ class ImageGenerationService:
 
         return await self.generate(Prompt(**generate_data))
 
+    async def controlnet_api(self, request: Request, data: ImageToImage):
+        # Get API_KEY from header
+        api_key = request.headers.get("API_KEY")
+        self.check_auth(api_key)
+        prompt = data.prompt
+        model_name = data.model_name
+        negative_prompt = data.negative_prompt
+        seed = data.seed
+        conditional_image = data.conditional_image
+
+        if seed == 0:
+            seed = random.randint(0, 1000000)
+        advanced_params = data.advanced_params
+        model_list = self.model_config.find_one({"name": "model_list"})["data"]
+        if model_name not in model_list:
+            raise HTTPException(status_code=404, detail="Model not found")
+        supporting_pipelines = model_list[model_name].get("supporting_pipelines", [])
+        if "controlnet" not in supporting_pipelines:
+            raise HTTPException(
+                status_code=404, detail="Model does not support controlnet pipeline"
+            )
+        default_params = model_list[model_name].get("default_params", {})
+
+        conditional_image: Image.Image = self.base64_to_pil_image(conditional_image)
+        conditional_image = self.resize_divisible(conditional_image, 1024, 16)
+        conditional_image = self.pil_image_to_base64(conditional_image)
+
+        generate_data = {
+            "key": api_key,
+            "prompt": prompt,
+            "model_name": model_name,
+            "conditional_image": conditional_image,
+            "pipeline_type": "controlnet",
+            "seed": seed,
+            "pipeline_params": {
+                "negative_prompt": negative_prompt,
+                **advanced_params,
+            },
+        }
+        for key, value in default_params.items():
+            generate_data["pipeline_params"][key] = value
+
+        return await self.generate(Prompt(**generate_data))
+
     def base64_to_pil_image(self, base64_image):
         image = base64.b64decode(base64_image)
         image = io.BytesIO(image)
@@ -544,31 +594,36 @@ app = ImageGenerationService()
 
 
 @app.app.post("/api/v1/txt2img")
-@limiter.limit("2/minute") # Update the rate limit
+@limiter.limit(API_RATE_LIMIT) # Update the rate limit
 async def txt2img_api2(request: Request, data: TextToImage):
     return await app.txt2img_api(request, data)
 
 @app.app.post("/get_credentials")
-@limiter.limit("2/minute") # Update the rate limit
+@limiter.limit(API_RATE_LIMIT) # Update the rate limit
 async def get_credentials(request: Request, data: TextToImage):
     return await app.get_credentials(request, data)
 
 @app.app.post("/generate")
-@limiter.limit("2/minute") # Update the rate limit
+@limiter.limit(API_RATE_LIMIT) # Update the rate limit
 async def generate(request: Request, data: TextToImage):
     return await app.generate(request, data)
 
 @app.app.get("/get_validators")
-@limiter.limit("2/minute") # Update the rate limit
+@limiter.limit(API_RATE_LIMIT) # Update the rate limit
 async def get_validators(request: Request, data: TextToImage):
     return await app.get_validators(request, data)
 
 @app.app.post("/api/v1/img2img")
-@limiter.limit("2/minute") # Update the rate limit
+@limiter.limit(API_RATE_LIMIT) # Update the rate limit
 async def img2img_api(request: Request, data: TextToImage):
     return await app.img2img_api(request, data)
 
 @app.app.post("/api/v1/instantid")
-@limiter.limit("2/minute") # Update the rate limit
+@limiter.limit(API_RATE_LIMIT) # Update the rate limit
 async def instantid_api(request: Request, data: TextToImage):
     return await app.instantid_api(request, data)
+
+@app.app.post("/api/v1/controlnet")
+@limiter.limit(API_RATE_LIMIT) # Update the rate limit
+async def controlnet_api(request: Request, data: TextToImage):
+    return await app.controlnet_api(request, data)
