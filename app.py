@@ -99,6 +99,7 @@ class ImageGenerationService:
             self.client["image_generation_service"].create_collection(CollectionName.VALIDATORS.value)
             self.client["image_generation_service"].create_collection(CollectionName.AUTH_KEYS.value)
             self.client["image_generation_service"].create_collection(CollectionName.PRIVATE_KEY.value)
+            self.client["image_generation_service"].create_collection(CollectionName.MODEL_CONFIG.value)
         self.db = self.client["image_generation_service"]
         self.validators_collection = self.db[CollectionName.VALIDATORS.value]
         self.auth_keys_collection = self.db[CollectionName.AUTH_KEYS.value]
@@ -600,30 +601,30 @@ async def txt2img_api2(request: Request, data: TextToImage):
 
 @app.app.post("/get_credentials")
 @limiter.limit(API_RATE_LIMIT) # Update the rate limit
-async def get_credentials(request: Request, data: TextToImage):
-    return await app.get_credentials(request, data)
+async def get_credentials(request: Request, validator_info: ValidatorInfo):
+    return await app.get_credentials(request, validator_info)
 
 @app.app.post("/generate")
 @limiter.limit(API_RATE_LIMIT) # Update the rate limit
-async def generate(request: Request, data: TextToImage):
-    return await app.generate(request, data)
+async def generate(request: Request, prompt: Union[Prompt, TextPrompt]):
+    return await app.generate(request, prompt)
 
 @app.app.get("/get_validators")
 @limiter.limit(API_RATE_LIMIT) # Update the rate limit
-async def get_validators(request: Request, data: TextToImage):
-    return await app.get_validators(request, data)
+async def get_validators(request: Request):
+    return await app.get_validators(request)
 
 @app.app.post("/api/v1/img2img")
 @limiter.limit(API_RATE_LIMIT) # Update the rate limit
-async def img2img_api(request: Request, data: TextToImage):
+async def img2img_api(request: Request, data: ImageToImage):
     return await app.img2img_api(request, data)
 
 @app.app.post("/api/v1/instantid")
 @limiter.limit(API_RATE_LIMIT) # Update the rate limit
-async def instantid_api(request: Request, data: TextToImage):
+async def instantid_api(request: Request, data: ImageToImage):
     return await app.instantid_api(request, data)
 
 @app.app.post("/api/v1/controlnet")
 @limiter.limit(API_RATE_LIMIT) # Update the rate limit
-async def controlnet_api(request: Request, data: TextToImage):
+async def controlnet_api(request: Request, data: ImageToImage):
     return await app.controlnet_api(request, data)
