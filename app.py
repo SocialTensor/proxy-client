@@ -113,7 +113,7 @@ class ImageGenerationService:
         self.public_key_bytes = self.public_key.public_bytes(
             encoding=serialization.Encoding.Raw, format=serialization.PublicFormat.Raw
         )
-        self.model_list = self.model_config.find_one({"name": "model_list"})["data"]
+        self.model_list = self.model_config.find_one({"name": "model_list"})["data"] if self.model_config.find_one({"name": "model_list"}) else {}
         self.message = "image-generating-subnet"
         self.signature = base64.b64encode(
             self.private_key.sign(self.message.encode("utf-8"))
