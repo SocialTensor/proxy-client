@@ -13,14 +13,14 @@ from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from fastapi import FastAPI, HTTPException, Request
 from PIL import Image
-from pydantic import BaseModel
 from threading import Thread
-from pymongo import MongoClient
-from constants import API_RATE_LIMIT, ModelName, CollectionName
+from constants import API_RATE_LIMIT, ModelName
 from slowapi import Limiter
 from slowapi.util import get_remote_address
 from prometheus_fastapi_instrumentator import Instrumentator
 from PIL import Image
+from utils.data_types import Prompt, TextPrompt, TextToImage, ImageToImage, ValidatorInfo
+from utils.db_client import MongoDBHandler
 
 def get_api_key(request: Request):
     return request.headers.get("API_KEY", get_remote_address(request))
@@ -40,80 +40,26 @@ def pil_image_to_base64(image: Image.Image, format="JPEG") -> str:
 MONGO_DB_USERNAME = os.getenv("MONGO_DB_USERNAME")
 MONGO_DB_PASSWORD = os.getenv("MONGO_DB_PASSWORD")
 
-class Prompt(BaseModel):
-    key: str
-    prompt: str
-    model_name: str
-    pipeline_type: str = "txt2img"
-    conditional_image: str = ""
-    seed: int = -1
-    miner_uid: int = -1
-    pipeline_params: dict = {}
-
-
-class TextPrompt(BaseModel):
-    key: str
-    prompt_input: str
-    model_name: str
-    pipeline_params: dict = {}
-    seed: int = 0
-
-
-class TextToImage(BaseModel):
-    prompt: str
-    model_name: str
-    aspect_ratio: str = "1:1"
-    negative_prompt: str = ""
-    seed: int = 0
-    advanced_params: dict = {}
-
-
-class ImageToImage(BaseModel):
-    prompt: str
-    model_name: str
-    conditional_image: str
-    negative_prompt: str = ""
-    seed: int = 0
-    advanced_params: dict = {}
-
-
-class ValidatorInfo(BaseModel):
-    postfix: str
-    uid: int
-    all_uid_info: dict = {}
-    sha: str = ""
-
 class ImageGenerationService:
     def __init__(self):
         self.subtensor = bt.subtensor("finney")
         self.metagraph = self.subtensor.metagraph(23)
         mongoDBConnectUri = f"mongodb://{MONGO_DB_USERNAME}:{MONGO_DB_PASSWORD}@localhost:27017"
         # mongoDBConnectUri = f"mongodb://localhost:27017"
-        self.client = MongoClient(
-            mongoDBConnectUri
-        )
+        self.dbhandler = MongoDBHandler(mongoDBConnectUri, )
         # verify db connection
-        print(self.client.server_info())
-        if "image_generation_service" not in self.client.list_database_names():
-            print("Creating database", flush=True)
-            self.client["image_generation_service"].create_collection(CollectionName.VALIDATORS.value)
-            self.client["image_generation_service"].create_collection(CollectionName.AUTH_KEYS.value)
-            self.client["image_generation_service"].create_collection(CollectionName.PRIVATE_KEY.value)
-            self.client["image_generation_service"].create_collection(CollectionName.MODEL_CONFIG.value)
-        self.db = self.client["image_generation_service"]
-        self.validators_collection = self.db[CollectionName.VALIDATORS.value]
-        self.auth_keys_collection = self.db[CollectionName.AUTH_KEYS.value]
-        self.model_config = self.db[CollectionName.MODEL_CONFIG.value]
-        self.available_validators = self.get_available_validators()
+        print(self.dbhandler.client.server_info())
+
+        self.available_validators = self.dbhandler.get_available_validators()
         self.filter_validators()
         self.app = FastAPI()
-        self.auth_keys = self.get_auth_keys()
+        self.auth_keys = self.dbhandler.get_auth_keys()
         self.private_key = self.load_private_key()
         self.public_key = self.private_key.public_key()
         self.public_key_bytes = self.public_key.public_bytes(
             encoding=serialization.Encoding.Raw, format=serialization.PublicFormat.Raw
         )
-        model_list_entry = self.model_config.find_one({"name": "model_list"})
+        model_list_entry = self.dbhandler.model_config.find_one({"name": "model_list"})
         self.model_list = model_list_entry["data"] if model_list_entry else {}
         self.message = "image-generating-subnet"
         self.signature = base64.b64encode(
@@ -125,38 +71,25 @@ class ImageGenerationService:
         Instrumentator().instrument(self.app).expose(self.app)
         Thread(target=self.sync_metagraph_periodically, daemon=True).start()
         Thread(target=self.recheck_validators, daemon=True).start()
-        Thread(target=self.update_model_config, daemon=True).start()
-
-    def update_model_config(self):
-        while True:
-            time.sleep(60 * 10)
-            # Fetch new data from MongoDB and update self.model_config
-            self.model_config = self.db[CollectionName.MODEL_CONFIG.value]
         
     def sync_db(self):
-        new_available_validators = self.get_available_validators()
+        new_available_validators = self.dbhandler.get_available_validators()
         for key, value in new_available_validators.items():
             if key not in self.available_validators:
                 self.available_validators[key] = value
-        self.auth_keys = self.get_auth_keys()
+        self.auth_keys = self.dbhandler.get_auth_keys()
 
     def filter_validators(self) -> None:
         for hotkey in list(self.available_validators.keys()):
             self.available_validators[hotkey]["is_active"] = False
             if hotkey not in self.metagraph.hotkeys:
                 print(f"Removing validator {hotkey}", flush=True)
-                self.validators_collection.delete_one({"_id": hotkey})
+                self.dbhandler.validators_collection.delete_one({"_id": hotkey})
                 self.available_validators.pop(hotkey)
-
-    def get_available_validators(self) -> Dict:
-        return {doc["_id"]: doc for doc in self.validators_collection.find()}
-
-    def get_auth_keys(self) -> Dict:
-        return {doc["_id"]: doc for doc in self.auth_keys_collection.find()}
 
     def load_private_key(self) -> Ed25519PrivateKey:
         # Load private key from MongoDB or generate a new one
-        private_key_doc = self.db[CollectionName.PRIVATE_KEY.value].find_one()
+        private_key_doc = self.dbhandler.private_key.find_one()
         if private_key_doc:
             return serialization.load_pem_private_key(
                 private_key_doc["key"].encode("utf-8"), password=None
@@ -169,7 +102,7 @@ class ImageGenerationService:
                 format=serialization.PrivateFormat.PKCS8,
                 encryption_algorithm=serialization.NoEncryption(),
             ).decode("utf-8")
-            self.db[CollectionName.PRIVATE_KEY.value].insert_one({"key": private_key_pem})
+            self.dbhandler.private_key.insert_one({"key": private_key_pem})
             return private_key
 
     def sync_metagraph_periodically(self) -> None:
@@ -179,7 +112,7 @@ class ImageGenerationService:
             time.sleep(60 * 10)
 
     def check_auth(self, key: str) -> None:
-        if key not in self.get_auth_keys():
+        if key not in self.dbhandler.get_auth_keys():
             raise HTTPException(status_code=401, detail="Invalid authorization key")
 
     async def get_credentials(
@@ -205,7 +138,7 @@ class ImageGenerationService:
             f"Found validator\n- hotkey: {hotkey}, uid: {uid}, endpoint: {new_validator['generate_endpoint']}",
             flush=True,
         )
-        self.validators_collection.update_one(
+        self.dbhandler.validators_collection.update_one(
             {"_id": hotkey}, {"$set": new_validator}, upsert=True
         )
 
@@ -322,7 +255,7 @@ class ImageGenerationService:
             else:
                 today_counter["failure"] += 1
             try:
-                self.validators_collection.update_one(
+                self.dbhandler.validators_collection.update_one(
                     {"_id": hotkey}, {"$set": self.available_validators[hotkey]}
                 )
                 self.auth_keys[prompt.key].setdefault("request_count", 0)
@@ -330,7 +263,7 @@ class ImageGenerationService:
                 
                 self.auth_keys[prompt.key]["credit"] -= self.model_list[prompt.model_name].get("credit_cost", 1)
                 
-                self.auth_keys_collection.update_one(
+                self.dbhandler.auth_keys_collection.update_one(
                     {"_id": prompt.key}, {"$set": self.auth_keys[prompt.key]}
                 )
             except Exception as e:
@@ -374,7 +307,7 @@ class ImageGenerationService:
             print("Total validators:", len(self.available_validators), flush=True)
             # update validators to mongodb
             for hotkey in list(self.available_validators.keys()):
-                self.validators_collection.update_one(
+                self.dbhandler.validators_collection.update_one(
                     {"_id": hotkey}, {"$set": self.available_validators[hotkey]}
                 )
             time.sleep(60 * 5)
@@ -394,7 +327,7 @@ class ImageGenerationService:
         if seed == 0:
             seed = random.randint(0, 1000000)
         advanced_params = data.advanced_params
-        ratio_to_size = self.model_config.find_one({"name": "ratio-to-size"})["data"]
+        ratio_to_size = self.dbhandler.model_config.find_one({"name": "ratio-to-size"})["data"]
         if aspect_ratio not in ratio_to_size:
             raise HTTPException(status_code=400, detail="Aspect ratio not found")
         if model_name not in self.model_list:
@@ -535,7 +468,7 @@ class ImageGenerationService:
         if seed == 0:
             seed = random.randint(0, 1000000)
         advanced_params = data.advanced_params
-        model_list = self.model_config.find_one({"name": "model_list"})["data"]
+        model_list = self.dbhandler.model_config.find_one({"name": "model_list"})["data"]
         if model_name not in model_list:
             raise HTTPException(status_code=404, detail="Model not found")
         supporting_pipelines = model_list[model_name].get("supporting_pipelines", [])
