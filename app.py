@@ -608,7 +608,7 @@ async def get_credentials(request: Request, validator_info: ValidatorInfo):
 @app.app.post("/generate")
 @limiter.limit(API_RATE_LIMIT) # Update the rate limit
 async def generate(request: Request, prompt: Union[Prompt, TextPrompt]):
-    return await app.generate(request, prompt)
+    return await app.generate(prompt)
 
 @app.app.get("/get_validators")
 @limiter.limit(API_RATE_LIMIT) # Update the rate limit
