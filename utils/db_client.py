@@ -6,11 +6,16 @@ import time
 
 from utils.db_base import DBBase
 from utils.db_schemas import AuthKeySchema, ValidatorSchema
+from utils.feed_data import AUTH_KEYS_FEED, MODEL_CONFIG_FEED, VALIDATORS_FEED
 
 class MongoDBHandler(DBBase):
   def __init__(self, mongoDBConnectUri: str, dbname = DB_NAME) -> None:
     super().__init__(mongoDBConnectUri)
+    is_first_time = False
+    
+    # Check if the database exists
     if dbname not in self.client.list_database_names():
+      is_first_time = True
       print("Creating database", flush=True)
       self.client[dbname].create_collection(CollectionName.VALIDATORS.value)
       self.client[dbname].create_collection(CollectionName.AUTH_KEYS.value)
@@ -22,6 +27,13 @@ class MongoDBHandler(DBBase):
     self.auth_keys_collection = self.db[CollectionName.AUTH_KEYS.value]
     self.model_config = self.db[CollectionName.MODEL_CONFIG.value]
     self.private_key = self.db[CollectionName.PRIVATE_KEY.value]
+    
+    # Feed data to the collections
+    if is_first_time:
+      self.validators_collection.insert_many(VALIDATORS_FEED)
+      self.auth_keys_collection.insert_many(AUTH_KEYS_FEED)
+      self.model_config.insert_many(MODEL_CONFIG_FEED)
+      is_first_time = False
     
     Thread(target=self.update_model_config, daemon=True).start()
     
