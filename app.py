@@ -1,4 +1,3 @@
-import argparse
 import asyncio
 import base64
 import io
@@ -6,20 +5,27 @@ import os
 import requests
 import random
 from datetime import date
-from typing import Dict, List, Optional, Tuple, Union
+from typing import Dict, List, Union
 import time
 import bittensor as bt
 import httpx
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
-from fastapi import FastAPI, HTTPException, Request, UploadFile, File
+from fastapi import FastAPI, HTTPException, Request
 from PIL import Image
 from pydantic import BaseModel
 from threading import Thread
 from pymongo import MongoClient
+from constants import API_RATE_LIMIT, ModelName, CollectionName
+from slowapi import Limiter
+from slowapi.util import get_remote_address
 from prometheus_fastapi_instrumentator import Instrumentator
 from PIL import Image
 
+def get_api_key(request: Request):
+    return request.headers.get("API_KEY", get_remote_address(request))
+
+limiter = Limiter(key_func=get_api_key)
 
 def pil_image_to_base64(image: Image.Image, format="JPEG") -> str:
     if format not in ["JPEG", "PNG"]:
@@ -33,7 +39,6 @@ def pil_image_to_base64(image: Image.Image, format="JPEG") -> str:
 
 MONGO_DB_USERNAME = os.getenv("MONGO_DB_USERNAME")
 MONGO_DB_PASSWORD = os.getenv("MONGO_DB_PASSWORD")
-
 
 class Prompt(BaseModel):
     key: str
@@ -78,25 +83,27 @@ class ValidatorInfo(BaseModel):
     all_uid_info: dict = {}
     sha: str = ""
 
-
 class ImageGenerationService:
     def __init__(self):
         self.subtensor = bt.subtensor("finney")
         self.metagraph = self.subtensor.metagraph(23)
+        mongoDBConnectUri = f"mongodb://{MONGO_DB_USERNAME}:{MONGO_DB_PASSWORD}@localhost:27017"
+        # mongoDBConnectUri = f"mongodb://localhost:27017"
         self.client = MongoClient(
-            f"mongodb://{MONGO_DB_USERNAME}:{MONGO_DB_PASSWORD}@localhost:27017"
+            mongoDBConnectUri
         )
         # verify db connection
         print(self.client.server_info())
         if "image_generation_service" not in self.client.list_database_names():
             print("Creating database", flush=True)
-            self.client["image_generation_service"].create_collection("validators")
-            self.client["image_generation_service"].create_collection("auth_keys")
-            self.client["image_generation_service"].create_collection("private_key")
+            self.client["image_generation_service"].create_collection(CollectionName.VALIDATORS.value)
+            self.client["image_generation_service"].create_collection(CollectionName.AUTH_KEYS.value)
+            self.client["image_generation_service"].create_collection(CollectionName.PRIVATE_KEY.value)
+            self.client["image_generation_service"].create_collection(CollectionName.MODEL_CONFIG.value)
         self.db = self.client["image_generation_service"]
-        self.validators_collection = self.db["validators"]
-        self.auth_keys_collection = self.db["auth_keys"]
-        self.model_config = self.db["model_config"]
+        self.validators_collection = self.db[CollectionName.VALIDATORS.value]
+        self.auth_keys_collection = self.db[CollectionName.AUTH_KEYS.value]
+        self.model_config = self.db[CollectionName.MODEL_CONFIG.value]
         self.available_validators = self.get_available_validators()
         self.filter_validators()
         self.app = FastAPI()
@@ -106,6 +113,8 @@ class ImageGenerationService:
         self.public_key_bytes = self.public_key.public_bytes(
             encoding=serialization.Encoding.Raw, format=serialization.PublicFormat.Raw
         )
+        model_list_entry = self.model_config.find_one({"name": "model_list"})
+        self.model_list = model_list_entry["data"] if model_list_entry else {}
         self.message = "image-generating-subnet"
         self.signature = base64.b64encode(
             self.private_key.sign(self.message.encode("utf-8"))
@@ -113,23 +122,17 @@ class ImageGenerationService:
 
         self.loop = asyncio.get_event_loop()
 
-        self.app.add_api_route(
-            "/get_credentials", self.get_credentials, methods=["POST"]
-        )
-        self.app.add_api_route("/generate", self.generate, methods=["POST"])
-        self.app.add_api_route("/get_validators", self.get_validators, methods=["GET"])
-        self.app.add_api_route("/api/v1/txt2img", self.txt2img_api, methods=["POST"])
-        self.app.add_api_route("/api/v1/img2img", self.img2img_api, methods=["POST"])
-        self.app.add_api_route(
-            "/api/v1/instantid", self.instantid_api, methods=["POST"]
-        )
-        self.app.add_api_route(
-            "/api/v1/controlnet", self.controlnet_api, methods=["POST"]
-        )
         Instrumentator().instrument(self.app).expose(self.app)
         Thread(target=self.sync_metagraph_periodically, daemon=True).start()
         Thread(target=self.recheck_validators, daemon=True).start()
+        Thread(target=self.update_model_config, daemon=True).start()
 
+    def update_model_config(self):
+        while True:
+            time.sleep(60 * 10)
+            # Fetch new data from MongoDB and update self.model_config
+            self.model_config = self.db[CollectionName.MODEL_CONFIG.value]
+        
     def sync_db(self):
         new_available_validators = self.get_available_validators()
         for key, value in new_available_validators.items():
@@ -149,11 +152,14 @@ class ImageGenerationService:
         return {doc["_id"]: doc for doc in self.validators_collection.find()}
 
     def get_auth_keys(self) -> Dict:
-        return {doc["_id"]: doc for doc in self.auth_keys_collection.find()}
+        auth_keys = {doc["_id"]: doc for doc in self.auth_keys_collection.find()}
+        for k, v in auth_keys.items():
+            v.setdefault("credit", 10000)
+        return auth_keys
 
     def load_private_key(self) -> Ed25519PrivateKey:
         # Load private key from MongoDB or generate a new one
-        private_key_doc = self.db["private_key"].find_one()
+        private_key_doc = self.db[CollectionName.PRIVATE_KEY.value].find_one()
         if private_key_doc:
             return serialization.load_pem_private_key(
                 private_key_doc["key"].encode("utf-8"), password=None
@@ -166,7 +172,7 @@ class ImageGenerationService:
                 format=serialization.PrivateFormat.PKCS8,
                 encryption_algorithm=serialization.NoEncryption(),
             ).decode("utf-8")
-            self.db["private_key"].insert_one({"key": private_key_pem})
+            self.db[CollectionName.PRIVATE_KEY.value].insert_one({"key": private_key_pem})
             return private_key
 
     def sync_metagraph_periodically(self) -> None:
@@ -231,6 +237,11 @@ class ImageGenerationService:
             return True, ""
 
     async def generate(self, prompt: Union[Prompt, TextPrompt]):
+        if prompt.model_name not in self.model_list:
+            raise HTTPException(status_code=404, detail="Model not found")
+        if self.auth_keys[prompt.key]["credit"] < self.model_list[prompt.model_name].get("credit_cost", 1):
+            raise HTTPException(status_code=403, detail="Run out of credit")
+                
         self.sync_db()
         self.check_auth(prompt.key)
         if isinstance(prompt, Prompt):
@@ -251,9 +262,10 @@ class ImageGenerationService:
                 except Exception as e:
                     print(e, flush=True)
 
+        validatorItems = self.available_validators.items()
         hotkeys = [
             hotkey
-            for hotkey, log in self.available_validators.items()
+            for hotkey, log in validatorItems
             if log["is_active"]
         ]
         hotkeys = [hotkey for hotkey in hotkeys if hotkey in self.metagraph.hotkeys]
@@ -318,6 +330,9 @@ class ImageGenerationService:
                 )
                 self.auth_keys[prompt.key].setdefault("request_count", 0)
                 self.auth_keys[prompt.key]["request_count"] += 1
+                
+                self.auth_keys[prompt.key]["credit"] -= self.model_list[prompt.model_name].get("credit_cost", 1)
+                
                 self.auth_keys_collection.update_one(
                     {"_id": prompt.key}, {"$set": self.auth_keys[prompt.key]}
                 )
@@ -384,19 +399,18 @@ class ImageGenerationService:
         advanced_params = data.advanced_params
         ratio_to_size = self.model_config.find_one({"name": "ratio-to-size"})["data"]
         if aspect_ratio not in ratio_to_size:
-            raise HTTPException(status_code=404, detail="Aspect ratio not found")
-        model_list = self.model_config.find_one({"name": "model_list"})["data"]
-        if model_name not in model_list:
-            raise HTTPException(status_code=404, detail="Model not found")
-        supporting_pipelines = model_list[model_name].get("supporting_pipelines", [])
+            raise HTTPException(status_code=400, detail="Aspect ratio not found")
+        if model_name not in self.model_list:
+            raise HTTPException(status_code=400, detail="Model not found")
+        supporting_pipelines = self.model_list[model_name].get("supporting_pipelines", [])
         if "txt2img" not in supporting_pipelines:
             raise HTTPException(
-                status_code=404, detail="Model does not support txt2img pipeline"
+                status_code=400, detail="Model does not support txt2img pipeline"
             )
-        default_params = model_list[model_name].get("default_params", {})
+        default_params = self.model_list[model_name].get("default_params", {})
         width, height = ratio_to_size[aspect_ratio]
 
-        if model_name == "GoJourney":
+        if model_name == ModelName.GO_JOURNEY.value:
             prompt = f"{prompt} --ar {aspect_ratio} --v 6"
             pipeline_type = "gojourney"
         else:
@@ -438,15 +452,14 @@ class ImageGenerationService:
         if seed == 0:
             seed = random.randint(0, 1000000)
         advanced_params = data.advanced_params
-        model_list = self.model_config.find_one({"name": "model_list"})["data"]
-        if model_name not in model_list:
+        if model_name not in self.model_list:
             raise HTTPException(status_code=404, detail="Model not found")
-        supporting_pipelines = model_list[model_name].get("supporting_pipelines", [])
+        supporting_pipelines = self.model_list[model_name].get("supporting_pipelines", [])
         if "img2img" not in supporting_pipelines:
             raise HTTPException(
                 status_code=404, detail="Model does not support img2img pipeline"
             )
-        default_params = model_list[model_name].get("default_params", {})
+        default_params = self.model_list[model_name].get("default_params", {})
         conditional_image: Image.Image = self.base64_to_pil_image(conditional_image)
         conditional_image = self.resize_divisible(conditional_image, 1024, 16)
         conditional_image = self.pil_image_to_base64(conditional_image)
@@ -482,15 +495,14 @@ class ImageGenerationService:
         if seed == 0:
             seed = random.randint(0, 1000000)
         advanced_params = data.advanced_params
-        model_list = self.model_config.find_one({"name": "model_list"})["data"]
-        if model_name not in model_list:
+        if model_name not in self.model_list:
             raise HTTPException(status_code=404, detail="Model not found")
-        supporting_pipelines = model_list[model_name].get("supporting_pipelines", [])
+        supporting_pipelines = self.model_list[model_name].get("supporting_pipelines", [])
         if "instantid" not in supporting_pipelines:
             raise HTTPException(
                 status_code=404, detail="Model does not support instantid pipeline"
             )
-        default_params = model_list[model_name].get("default_params", {})
+        default_params = self.model_list[model_name].get("default_params", {})
 
         conditional_image: Image.Image = self.base64_to_pil_image(conditional_image)
         conditional_image = self.resize_divisible(conditional_image, 1024, 16)
@@ -584,3 +596,39 @@ class ImageGenerationService:
 
 
 app = ImageGenerationService()
+
+
+@app.app.post("/api/v1/txt2img")
+@limiter.limit(API_RATE_LIMIT) # Update the rate limit
+async def txt2img_api2(request: Request, data: TextToImage):
+    return await app.txt2img_api(request, data)
+
+@app.app.post("/get_credentials")
+@limiter.limit(API_RATE_LIMIT) # Update the rate limit
+async def get_credentials(request: Request, validator_info: ValidatorInfo):
+    return await app.get_credentials(request, validator_info)
+
+@app.app.post("/generate")
+@limiter.limit(API_RATE_LIMIT) # Update the rate limit
+async def generate(request: Request, prompt: Union[Prompt, TextPrompt]):
+    return await app.generate(prompt)
+
+@app.app.get("/get_validators")
+@limiter.limit(API_RATE_LIMIT) # Update the rate limit
+async def get_validators(request: Request):
+    return await app.get_validators(request)
+
+@app.app.post("/api/v1/img2img")
+@limiter.limit(API_RATE_LIMIT) # Update the rate limit
+async def img2img_api(request: Request, data: ImageToImage):
+    return await app.img2img_api(request, data)
+
+@app.app.post("/api/v1/instantid")
+@limiter.limit(API_RATE_LIMIT) # Update the rate limit
+async def instantid_api(request: Request, data: ImageToImage):
+    return await app.instantid_api(request, data)
+
+@app.app.post("/api/v1/controlnet")
+@limiter.limit(API_RATE_LIMIT) # Update the rate limit
+async def controlnet_api(request: Request, data: ImageToImage):
+    return await app.controlnet_api(request, data)

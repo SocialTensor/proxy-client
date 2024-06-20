@@ -1,8 +1,15 @@
-
+*.json
+*.pem
+data
+.DS_Store
+output_*.png
+schema
 *.pem
 data
 myvenv
 __pycache__
 prometheus-data
 fake*
-log/*
+.DS_Store
+schema-test.py
+launch.json
