@@ -152,7 +152,10 @@ class ImageGenerationService:
         return {doc["_id"]: doc for doc in self.validators_collection.find()}
 
     def get_auth_keys(self) -> Dict:
-        return {doc["_id"]: doc for doc in self.auth_keys_collection.find()}
+        auth_keys = {doc["_id"]: doc for doc in self.auth_keys_collection.find()}
+        for k, v in auth_keys:
+            v.setdefault("credit", 10000)
+        return auth_keys
 
     def load_private_key(self) -> Ed25519PrivateKey:
         # Load private key from MongoDB or generate a new one
