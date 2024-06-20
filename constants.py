@@ -1,7 +1,7 @@
 from enum import Enum
 
 # UPDATE THIS WITH THE REQUIREMENT
-API_RATE_LIMIT = "2/minute" # 2 requests per minute for the API. 
+API_RATE_LIMIT = "120/minute" # 120 requests per minute for the API. 
 
 DB_NAME = "image_generation_service"
 
