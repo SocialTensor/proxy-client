@@ -153,7 +153,7 @@ class ImageGenerationService:
 
     def get_auth_keys(self) -> Dict:
         auth_keys = {doc["_id"]: doc for doc in self.auth_keys_collection.find()}
-        for k, v in auth_keys:
+        for k, v in auth_keys.items():
             v.setdefault("credit", 10000)
         return auth_keys
 
