@@ -152,7 +152,10 @@ class ImageGenerationService:
         return {doc["_id"]: doc for doc in self.validators_collection.find()}
 
     def get_auth_keys(self) -> Dict:
-        return {doc["_id"]: doc for doc in self.auth_keys_collection.find()}
+        auth_keys = {doc["_id"]: doc for doc in self.auth_keys_collection.find()}
+        for k, v in auth_keys.items():
+            v.setdefault("credit", 10000)
+        return auth_keys
 
     def load_private_key(self) -> Ed25519PrivateKey:
         # Load private key from MongoDB or generate a new one
@@ -608,7 +611,7 @@ async def get_credentials(request: Request, validator_info: ValidatorInfo):
 @app.app.post("/generate")
 @limiter.limit(API_RATE_LIMIT) # Update the rate limit
 async def generate(request: Request, prompt: Union[Prompt, TextPrompt]):
-    return await app.generate(request, prompt)
+    return await app.generate(prompt)
 
 @app.app.get("/get_validators")
 @limiter.limit(API_RATE_LIMIT) # Update the rate limit
