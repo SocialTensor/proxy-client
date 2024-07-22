@@ -49,6 +49,6 @@ class MongoDBHandler(DBBase):
   def get_auth_keys(self) -> Dict[str, AuthKeySchema]:
     auth_keys = {doc["_id"]: doc for doc in self.auth_keys_collection.find()}
     for k, v in auth_keys.items():
-      v.setdefault("credit", 10000)
+      v.setdefault("credit", 10)
     return auth_keys
 

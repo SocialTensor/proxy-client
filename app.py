@@ -2,6 +2,7 @@ import asyncio
 import base64
 import io
 import os
+from bson import ObjectId
 import requests
 import random
 from datetime import date
@@ -19,8 +20,10 @@ from slowapi import Limiter
 from slowapi.util import get_remote_address
 from prometheus_fastapi_instrumentator import Instrumentator
 from PIL import Image
-from utils.data_types import Prompt, TextPrompt, TextToImage, ImageToImage, ValidatorInfo
+from utils.data_types import Prompt, TextPrompt, TextToImage, ImageToImage, UserSigninInfo, ValidatorInfo
 from utils.db_client import MongoDBHandler
+from fastapi.middleware.cors import CORSMiddleware
+from utils.common import check_password, hash_password
 
 def get_api_key(request: Request):
     return request.headers.get("API_KEY", get_remote_address(request))
@@ -40,6 +43,10 @@ def pil_image_to_base64(image: Image.Image, format="JPEG") -> str:
 MONGO_DB_USERNAME = os.getenv("MONGO_DB_USERNAME")
 MONGO_DB_PASSWORD = os.getenv("MONGO_DB_PASSWORD")
 
+# Define a list of allowed origins (domains)
+allowed_origins = [
+    "http://localhost:3000",  # Change this to the domain you want to allow
+]
 class ImageGenerationService:
     def __init__(self):
         self.subtensor = bt.subtensor("finney")
@@ -53,6 +60,14 @@ class ImageGenerationService:
         self.available_validators = self.dbhandler.get_available_validators()
         self.filter_validators()
         self.app = FastAPI()
+        # Add CORSMiddleware to the application instance
+        self.app.add_middleware(
+            CORSMiddleware,
+            allow_origins=allowed_origins,  # List of allowed origins
+            allow_credentials=True,
+            allow_methods=["*"],  # Allows all methods
+            allow_headers=["*"],  # Allows all headers
+        )
         self.auth_keys = self.dbhandler.get_auth_keys()
         self.private_key = self.load_private_key()
         self.public_key = self.private_key.public_key()
@@ -169,7 +184,7 @@ class ImageGenerationService:
     async def generate(self, prompt: Union[Prompt, TextPrompt]):
         if prompt.model_name not in self.model_list:
             raise HTTPException(status_code=404, detail="Model not found")
-        if self.auth_keys[prompt.key]["credit"] < self.model_list[prompt.model_name].get("credit_cost", 1):
+        if self.auth_keys[prompt.key]["credit"] < self.model_list[prompt.model_name].get("credit_cost", 0.001):
             raise HTTPException(status_code=403, detail="Run out of credit")
                 
         self.sync_db()
@@ -261,7 +276,7 @@ class ImageGenerationService:
                 self.auth_keys[prompt.key].setdefault("request_count", 0)
                 self.auth_keys[prompt.key]["request_count"] += 1
                 
-                self.auth_keys[prompt.key]["credit"] -= self.model_list[prompt.model_name].get("credit_cost", 1)
+                self.auth_keys[prompt.key]["credit"] -= self.model_list[prompt.model_name].get("credit_cost", 0.001)
                 
                 self.dbhandler.auth_keys_collection.update_one(
                     {"_id": prompt.key}, {"$set": self.auth_keys[prompt.key]}
@@ -524,7 +539,47 @@ class ImageGenerationService:
         image = image.resize((W, H))
         return image
 
+    def signin(self, request: Request, data: UserSigninInfo):
+        userInfo = self.dbhandler.auth_keys_collection.find_one({"email": data.email})
+        if userInfo:
+            if check_password(data.password, userInfo["password"]):
+                userInfo["_id"] = str(userInfo["_id"])
+                userInfo.pop('password', None)
+                return userInfo
+            else:
+                raise HTTPException(
+                    status_code=400, detail="User credentials are incorrect!"
+                )
+        else:
+            raise HTTPException(
+                status_code=400, detail="User does not exist!"
+            )
 
+    def signup(self, request: Request, data: UserSigninInfo):
+        userInfo = self.dbhandler.auth_keys_collection.find_one({"email": data.email})
+        if userInfo:
+            raise HTTPException(
+                status_code=400, detail="User with the same email already exists!"
+            )
+        
+        userInfo = self.dbhandler.auth_keys_collection.insert_one({
+            "email": data.email,
+            "request_count": 0,
+            "password": hash_password(data.password),
+            "credit": 10
+        })
+        # Retrieve the inserted user document using the inserted ID
+        created_user = self.dbhandler.auth_keys_collection.find_one(
+            {"_id": ObjectId(userInfo.inserted_id)},
+            {"password": 0}
+        )
+        
+        # Optionally, convert the ObjectId to string if returning as JSON
+        if created_user:
+            created_user["_id"] = str(created_user["_id"])
+        
+        return created_user
+        
 app = ImageGenerationService()
 
 
@@ -562,3 +617,18 @@ async def instantid_api(request: Request, data: ImageToImage):
 @limiter.limit(API_RATE_LIMIT) # Update the rate limit
 async def controlnet_api(request: Request, data: ImageToImage):
     return await app.controlnet_api(request, data)
+
+@app.app.post("/api/v1/signin")
+@limiter.limit(API_RATE_LIMIT) # Update the rate limit
+def signin(request: Request, data: UserSigninInfo):
+    user = app.signin(request, data)
+    return {"message": "User signed in successfully", "user": user}
+
+@app.app.post("/api/v1/signup")
+@limiter.limit(API_RATE_LIMIT) # Update the rate limit
+def signup(request: Request, data: UserSigninInfo):
+    insert_result = app.signup(request, data)
+    if insert_result:
+        return {"message": "User created successfully", "user": insert_result}
+    else:
+        raise HTTPException(status_code=500, detail="Failed to create user")
