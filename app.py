@@ -667,3 +667,8 @@ async def instantid_api(request: Request, data: ImageToImage):
 @limiter.limit(API_RATE_LIMIT) # Update the rate limit
 async def controlnet_api(request: Request, data: ImageToImage):
     return await app.controlnet_api(request, data)
+
+@app.app.post("/api/v1/chat/completions")
+@limiter.limit(API_RATE_LIMIT)
+async def chat_completions_api(request: Request, data: ChatCompletion):
+    return await app.chat_completions(request, data)
