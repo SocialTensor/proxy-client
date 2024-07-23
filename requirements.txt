@@ -8,3 +8,4 @@ prometheus_fastapi_instrumentator==6.0.0
 pymongo==4.7.3
 slowapi==0.1.9
 transformers
+jinja2==3.1.0

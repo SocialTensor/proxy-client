@@ -597,9 +597,9 @@ class ImageGenerationService:
             "prompt_input": messages_str,
             "model_name": data.model,
             "pipeline_params": {
-                data.temperature,
-                data.top_p,
-                data.max_tokens
+                "temperature": data.temperature,
+                "top_p": data.top_p,
+                "max_tokens": data.max_tokens
             }
         }
         return await self.generate(TextPrompt(**generate_data))
