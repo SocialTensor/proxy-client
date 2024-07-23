@@ -137,9 +137,8 @@ class ImageGenerationService:
         Thread(target=self.update_model_config, daemon=True).start()
         self.tokenizer_config = self.model_config.find_one({"name": "tokenizer"})
         print(self.tokenizer_config, flush=True)
-        tokenizers = [AutoTokenizer.from_pretrained(v) for v in self.tokenizer_config['data'].values()]
         self.tokenizers = {
-            name: tokenizer for name in zip(list(self.tokenizer_config['data'].keys(), tokenizers))
+            k: AutoTokenizer.from_pretrained(v) for k, v in self.tokenizer_config["data"].items()
         }
         print(self.tokenizers, flush=True)
 
