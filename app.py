@@ -46,6 +46,7 @@ MONGO_DB_PASSWORD = os.getenv("MONGO_DB_PASSWORD")
 # Define a list of allowed origins (domains)
 allowed_origins = [
     "http://localhost:3000",  # Change this to the domain you want to allow
+    "https://nichetensor.com"
 ]
 class ImageGenerationService:
     def __init__(self):
