@@ -602,7 +602,8 @@ class ImageGenerationService:
                 "max_tokens": data.max_tokens
             }
         }
-        return await self.generate(TextPrompt(**generate_data))
+        response = await self.generate(TextPrompt(**generate_data))
+        return response['prompt_output']
 
     def base64_to_pil_image(self, base64_image):
         image = base64.b64decode(base64_image)
