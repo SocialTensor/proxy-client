@@ -138,7 +138,7 @@ class ImageGenerationService:
         self.tokenizer_config = self.model_config.find_one({"name": "tokenizer"})
         print(self.tokenizer_config, flush=True)
         self.tokenizers = {
-            k, AutoTokenizer.from_pretrained(v) for k, v in self.tokenizer_config["data"]
+            k, AutoTokenizer.from_pretrained(v) for k, v in self.tokenizer_config["data"].items()
         }
         print(self.tokenizers, flush=True)
 
