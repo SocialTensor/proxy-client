@@ -139,7 +139,7 @@ class ImageGenerationService:
         print(self.tokenizer_config, flush=True)
         tokenizers = [AutoTokenizer.from_pretrained(v) for v in self.tokenizer_config['data'].values()]
         self.tokenizers = {
-            name, tokenizer for name in zip(list(self.tokenizer_config['data'].keys(), tokenizers))
+            name: tokenizer for name in zip(list(self.tokenizer_config['data'].keys(), tokenizers))
         }
         print(self.tokenizers, flush=True)
 
