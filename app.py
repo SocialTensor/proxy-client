@@ -382,10 +382,12 @@ class ImageGenerationService:
                 **advanced_params,
             },
         }
+        print(generate_data, flush=True)
         for key, value in default_params.items():
             generate_data["pipeline_params"][key] = value
         output = await self.generate(Prompt(**generate_data))
         if model_name == "DallE":
+            print(output, flush=True)
             image_url = output["response_dict"]["url"]
             image = Image.open(requests.get(image_url, stream=True).raw)
             base64_image = pil_image_to_base64(image)
