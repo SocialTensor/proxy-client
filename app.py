@@ -20,10 +20,11 @@ from slowapi import Limiter
 from slowapi.util import get_remote_address
 from prometheus_fastapi_instrumentator import Instrumentator
 from PIL import Image
-from utils.data_types import Prompt, TextPrompt, TextToImage, ImageToImage, UserSigninInfo, ValidatorInfo
+from utils.data_types import Prompt, TextPrompt, TextToImage, ImageToImage, UserSigninInfo, ValidatorInfo, ChatCompletion
 from utils.db_client import MongoDBHandler
 from fastapi.middleware.cors import CORSMiddleware
 from utils.common import check_password, hash_password
+from transformers import AutoTokenizer
 
 def get_api_key(request: Request):
     return request.headers.get("API_KEY", get_remote_address(request))
@@ -87,6 +88,13 @@ class ImageGenerationService:
         Instrumentator().instrument(self.app).expose(self.app)
         Thread(target=self.sync_metagraph_periodically, daemon=True).start()
         Thread(target=self.recheck_validators, daemon=True).start()
+
+        self.tokenizer_config = self.dbhandler.model_config.find_one({"name": "tokenizer"})
+        print(self.tokenizer_config, flush=True)
+        self.tokenizers = {
+            k: AutoTokenizer.from_pretrained(v) for k, v in self.tokenizer_config["data"].items()
+        }
+        print(self.tokenizers, flush=True)
         
     def sync_db(self):
         new_available_validators = self.dbhandler.get_available_validators()
@@ -515,6 +523,28 @@ class ImageGenerationService:
 
         return await self.generate(Prompt(**generate_data))
 
+    async def chat_completions(self, request: Request, data: ChatCompletion):
+        # Get API_KEY from header
+        api_key = request.headers.get("API_KEY")
+        self.check_auth(api_key)
+        model_list = self.dbhandler.model_config.find_one({"name": "model_list"})["data"]
+        if data.model not in model_list:
+            raise HTTPException(status_code=404, detail="Model not found")
+        messages_str = self.tokenizers[data.model].apply_chat_template(data.messages, tokenize=False)
+        print(f"Chat message str: {messages_str}", flush=True)
+        generate_data = {
+            "key": api_key,
+            "prompt_input": messages_str,
+            "model_name": data.model,
+            "pipeline_params": {
+                "temperature": data.temperature,
+                "top_p": data.top_p,
+                "max_tokens": data.max_tokens
+            }
+        }
+        response = await self.generate(TextPrompt(**generate_data))
+        return response['prompt_output']
+
     def base64_to_pil_image(self, base64_image):
         image = base64.b64decode(base64_image)
         image = io.BytesIO(image)
@@ -618,6 +648,11 @@ async def instantid_api(request: Request, data: ImageToImage):
 @limiter.limit(API_RATE_LIMIT) # Update the rate limit
 async def controlnet_api(request: Request, data: ImageToImage):
     return await app.controlnet_api(request, data)
+
+@app.app.post("/api/v1/chat/completions")
+@limiter.limit(API_RATE_LIMIT) # Update the rate limit
+async def chat_completions_api(request: Request, data: ChatCompletion):
+    return await app.chat_completions(request, data)
 
 @app.app.post("/api/v1/signin")
 @limiter.limit(API_RATE_LIMIT) # Update the rate limit
