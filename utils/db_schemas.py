@@ -27,7 +27,7 @@ class ModelDefaultParams(BaseModel):
 class ModelData(BaseModel):
   supporting_pipelines: List[str]
   default_params: Optional[ModelDefaultParams]
-  credit_cost: int
+  credit_cost: float
 
 class Resolution(BaseModel):
   values: Tuple[int, int]

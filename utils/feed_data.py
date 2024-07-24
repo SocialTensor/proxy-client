@@ -16,7 +16,9 @@ AUTH_KEYS_FEED = [
   {
     "_id": "[auth_key]",
     "request_count": 0,
-    "credit": 1000
+    "credit": 10,
+    "email": '',
+    "password": ''
   }
 ]
 
@@ -34,7 +36,7 @@ MODEL_CONFIG_FEED = [
           "clip_skip": 2,
           "guidance_scale": 7
         },
-        "credit_cost": 1
+        "credit_cost": 0.001
       },
       "AnimeV3": {
         "supporting_pipelines": [
@@ -45,7 +47,7 @@ MODEL_CONFIG_FEED = [
           "clip_skip": 2,
           "guidance_scale": 7
         },
-        "credit_cost": 1
+        "credit_cost": 0.001
       },
       "RealitiesEdgeXL": {
         "supporting_pipelines": [
@@ -56,7 +58,7 @@ MODEL_CONFIG_FEED = [
           "clip_skip": 2,
           "guidance_scale": 2
         },
-        "credit_cost": 1
+        "credit_cost": 0.001
       },
       "DreamShaperXL": {
         "supporting_pipelines": [
@@ -69,7 +71,7 @@ MODEL_CONFIG_FEED = [
           "clip_skip": 2,
           "guidance_scale": 2
         },
-        "credit_cost": 1
+        "credit_cost": 0.001
       },
       "GoJourney": {
         "supporting_pipelines": [
@@ -77,19 +79,19 @@ MODEL_CONFIG_FEED = [
           "txt2img"
         ],
         "default_params": {},
-        "credit_cost": 2
+        "credit_cost": 0.001
       },
       "StickerMaker": {
         "supporting_pipelines": [
           "txt2img"
         ],
-        "credit_cost": 1
+        "credit_cost": 0.001
       },
       "FaceToMany": {
         "supporting_pipelines": [
           "img2img"
         ],
-        "credit_cost": 1
+        "credit_cost": 0.001
       }
     }
   },
