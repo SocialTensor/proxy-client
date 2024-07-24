@@ -46,3 +46,10 @@ class ValidatorInfo(BaseModel):
 class UserSigninInfo(BaseModel):
     email: str
     password: str
+
+class ChatCompletion(BaseModel):
+    model: str
+    messages: list[dict]
+    temperature: float = 1
+    top_p: float = 1
+    max_tokens: int = 128

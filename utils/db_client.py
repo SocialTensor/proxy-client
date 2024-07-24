@@ -39,7 +39,7 @@ class MongoDBHandler(DBBase):
     
   def update_model_config(self):
       while True:
-        time.sleep(60 * 10)
+        time.sleep(60)
         # Fetch new data from MongoDB and update self.model_config
         self.model_config = self.db[CollectionName.MODEL_CONFIG.value]
             
