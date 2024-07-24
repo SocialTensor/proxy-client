@@ -42,3 +42,7 @@ class ValidatorInfo(BaseModel):
     uid: int
     all_uid_info: dict = {}
     sha: str = ""
+
+class UserSigninInfo(BaseModel):
+    email: str
+    password: str
