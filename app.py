@@ -49,6 +49,9 @@ allowed_origins = [
     "http://localhost:3000",  # Change this to the domain you want to allow
     "https://nichetensor.com"
 ]
+
+TRUSTED_DOMAINS = ["54.203.165.0"]
+
 class ImageGenerationService:
     def __init__(self):
         self.subtensor = bt.subtensor("finney")
@@ -197,7 +200,6 @@ class ImageGenerationService:
             raise HTTPException(status_code=403, detail="Run out of credit")
                 
         self.sync_db()
-        self.check_auth(prompt.key)
         if isinstance(prompt, Prompt):
             is_safe_prompt, reason = await self.check_prompt(prompt.prompt)
             if not is_safe_prompt:
@@ -341,8 +343,6 @@ class ImageGenerationService:
 
     async def txt2img_api(self, request: Request, data: TextToImage):
         # Get API_KEY from header
-        api_key = request.headers.get("API_KEY")
-        self.check_auth(api_key)
         prompt = data.prompt
         model_name = data.model_name
         aspect_ratio = data.aspect_ratio
@@ -396,9 +396,6 @@ class ImageGenerationService:
         return output
 
     async def img2img_api(self, request: Request, data: ImageToImage):
-        # Get API_KEY from header
-        api_key = request.headers.get("API_KEY")
-        self.check_auth(api_key)
         prompt = data.prompt
         model_name = data.model_name
         negative_prompt = data.negative_prompt
@@ -439,9 +436,6 @@ class ImageGenerationService:
         return await self.generate(Prompt(**generate_data))
 
     async def instantid_api(self, request: Request, data: ImageToImage):
-        # Get API_KEY from header
-        api_key = request.headers.get("API_KEY")
-        self.check_auth(api_key)
         prompt = data.prompt
         model_name = data.model_name
         negative_prompt = data.negative_prompt
@@ -482,9 +476,6 @@ class ImageGenerationService:
         return await self.generate(Prompt(**generate_data))
 
     async def controlnet_api(self, request: Request, data: ImageToImage):
-        # Get API_KEY from header
-        api_key = request.headers.get("API_KEY")
-        self.check_auth(api_key)
         prompt = data.prompt
         model_name = data.model_name
         negative_prompt = data.negative_prompt
@@ -526,9 +517,6 @@ class ImageGenerationService:
         return await self.generate(Prompt(**generate_data))
 
     async def upscale_api(self, request: Request, data: ImageToImage):
-        # Get API_KEY from header
-        api_key = request.headers.get("API_KEY")
-        self.check_auth(api_key)
         prompt = data.prompt
         model_name = data.model_name
         negative_prompt = data.negative_prompt
@@ -570,9 +558,6 @@ class ImageGenerationService:
         return await self.generate(Prompt(**generate_data))
     
     async def chat_completions(self, request: Request, data: ChatCompletion):
-        # Get API_KEY from header
-        api_key = request.headers.get("API_KEY")
-        self.check_auth(api_key)
         model_list = self.dbhandler.model_config.find_one({"name": "model_list"})["data"]
         if data.model not in model_list:
             raise HTTPException(status_code=404, detail="Model not found")
@@ -659,59 +644,71 @@ class ImageGenerationService:
         
 app = ImageGenerationService()
 
+async def api_key_checker(referer: str = Header(None), request: Request = None):
+    is_whitelist_domain = False
+    for trusted_domain in TRUSTED_DOMAINS:
+        if trusted_domain in referer:
+            is_whitelist_domain = True
+            break
+    if is_whitelist_domain:
+        # Bypass API key check if the request is from the trusted domain
+        return
+    api_key = request.headers.get("API_KEY")
+    if not api_key or api_key not in app.dbhandler.get_auth_keys():
+        raise HTTPException(status_code=403, detail="Invalid or missing API key")
 
-@app.app.post("/api/v1/txt2img")
+@app.app.post("/api/v1/txt2img", dependencies=[Depends(api_key_checker)])
 @limiter.limit(API_RATE_LIMIT) # Update the rate limit
 async def txt2img_api2(request: Request, data: TextToImage):
     return await app.txt2img_api(request, data)
 
-@app.app.post("/get_credentials")
+@app.app.post("/get_credentials", dependencies=[Depends(api_key_checker)])
 @limiter.limit(API_RATE_LIMIT) # Update the rate limit
 async def get_credentials(request: Request, validator_info: ValidatorInfo):
     return await app.get_credentials(request, validator_info)
 
-@app.app.post("/generate")
+@app.app.post("/generate", dependencies=[Depends(api_key_checker)])
 @limiter.limit(API_RATE_LIMIT) # Update the rate limit
 async def generate(request: Request, prompt: Union[Prompt, TextPrompt]):
     return await app.generate(prompt)
 
-@app.app.get("/get_validators")
+@app.app.get("/get_validators", dependencies=[Depends(api_key_checker)])
 @limiter.limit(API_RATE_LIMIT) # Update the rate limit
 async def get_validators(request: Request):
     return await app.get_validators(request)
 
-@app.app.post("/api/v1/img2img")
+@app.app.post("/api/v1/img2img", dependencies=[Depends(api_key_checker)])
 @limiter.limit(API_RATE_LIMIT) # Update the rate limit
 async def img2img_api(request: Request, data: ImageToImage):
     return await app.img2img_api(request, data)
 
-@app.app.post("/api/v1/instantid")
+@app.app.post("/api/v1/instantid", dependencies=[Depends(api_key_checker)])
 @limiter.limit(API_RATE_LIMIT) # Update the rate limit
 async def instantid_api(request: Request, data: ImageToImage):
     return await app.instantid_api(request, data)
 
-@app.app.post("/api/v1/controlnet")
+@app.app.post("/api/v1/controlnet", dependencies=[Depends(api_key_checker)])
 @limiter.limit(API_RATE_LIMIT) # Update the rate limit
 async def controlnet_api(request: Request, data: ImageToImage):
     return await app.controlnet_api(request, data)
 
-@app.app.post("/api/v1/upscale")
+@app.app.post("/api/v1/upscale", dependencies=[Depends(api_key_checker)])
 @limiter.limit(API_RATE_LIMIT) # Update the rate limit
 async def upscale_api(request: Request, data: ImageToImage):
     return await app.upscale_api(request, data)
 
-@app.app.post("/api/v1/chat/completions")
+@app.app.post("/api/v1/chat/completions", dependencies=[Depends(api_key_checker)])
 @limiter.limit(API_RATE_LIMIT) # Update the rate limit
 async def chat_completions_api(request: Request, data: ChatCompletion):
     return await app.chat_completions(request, data)
 
-@app.app.post("/api/v1/signin")
+@app.app.post("/api/v1/signin", dependencies=[Depends(api_key_checker)])
 @limiter.limit(API_RATE_LIMIT) # Update the rate limit
 def signin(request: Request, data: UserSigninInfo):
     user = app.signin(request, data)
     return {"message": "User signed in successfully", "user": user}
 
-@app.app.post("/api/v1/signup")
+@app.app.post("/api/v1/signup", dependencies=[Depends(api_key_checker)])
 @limiter.limit(API_RATE_LIMIT) # Update the rate limit
 def signup(request: Request, data: UserSigninInfo):
     insert_result = app.signup(request, data)
