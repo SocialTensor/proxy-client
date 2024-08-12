@@ -525,6 +525,50 @@ class ImageGenerationService:
 
         return await self.generate(Prompt(**generate_data))
 
+    async def upscale_api(self, request: Request, data: ImageToImage):
+        # Get API_KEY from header
+        api_key = request.headers.get("API_KEY")
+        self.check_auth(api_key)
+        prompt = data.prompt
+        model_name = data.model_name
+        negative_prompt = data.negative_prompt
+        seed = data.seed
+        conditional_image = data.conditional_image
+
+        if seed == 0:
+            seed = random.randint(0, 1000000)
+        advanced_params = data.advanced_params
+        model_list = self.dbhandler.model_config.find_one({"name": "model_list"})["data"]
+        if model_name not in model_list:
+            raise HTTPException(status_code=404, detail="Model not found")
+        supporting_pipelines = model_list[model_name].get("supporting_pipelines", [])
+        print(model_list[model_name])
+        if "upscale" not in supporting_pipelines:
+            raise HTTPException(
+                status_code=404, detail="Model does not support upscale pipeline"
+            )
+        default_params = model_list[model_name].get("default_params", {})
+
+        conditional_image: Image.Image = self.base64_to_pil_image(conditional_image)
+        conditional_image = self.pil_image_to_base64(conditional_image)
+
+        generate_data = {
+            "key": api_key,
+            "prompt": prompt,
+            "model_name": model_name,
+            "conditional_image": conditional_image,
+            "pipeline_type": "upscale",
+            "seed": seed,
+            "pipeline_params": {
+                "negative_prompt": negative_prompt,
+                **advanced_params,
+            },
+        }
+        for key, value in default_params.items():
+            generate_data["pipeline_params"][key] = value
+
+        return await self.generate(Prompt(**generate_data))
+    
     async def chat_completions(self, request: Request, data: ChatCompletion):
         # Get API_KEY from header
         api_key = request.headers.get("API_KEY")
@@ -650,6 +694,11 @@ async def instantid_api(request: Request, data: ImageToImage):
 @limiter.limit(API_RATE_LIMIT) # Update the rate limit
 async def controlnet_api(request: Request, data: ImageToImage):
     return await app.controlnet_api(request, data)
+
+@app.app.post("/api/v1/upscale")
+@limiter.limit(API_RATE_LIMIT) # Update the rate limit
+async def upscale_api(request: Request, data: ImageToImage):
+    return await app.upscale_api(request, data)
 
 @app.app.post("/api/v1/chat/completions")
 @limiter.limit(API_RATE_LIMIT) # Update the rate limit
