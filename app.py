@@ -646,10 +646,11 @@ app = ImageGenerationService()
 
 async def api_key_checker(referer: str = Header(None), request: Request = None):
     is_whitelist_domain = False
-    for trusted_domain in TRUSTED_DOMAINS:
-        if trusted_domain in referer:
-            is_whitelist_domain = True
-            break
+    if referer:
+        for trusted_domain in TRUSTED_DOMAINS:
+            if trusted_domain in referer:
+                is_whitelist_domain = True
+                break
     if is_whitelist_domain:
         # Bypass API key check if the request is from the trusted domain
         return
@@ -662,7 +663,7 @@ async def api_key_checker(referer: str = Header(None), request: Request = None):
 async def txt2img_api2(request: Request, data: TextToImage):
     return await app.txt2img_api(request, data)
 
-@app.app.post("/get_credentials", dependencies=[Depends(api_key_checker)])
+@app.app.post("/get_credentials")
 @limiter.limit(API_RATE_LIMIT) # Update the rate limit
 async def get_credentials(request: Request, validator_info: ValidatorInfo):
     return await app.get_credentials(request, validator_info)
