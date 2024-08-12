@@ -370,7 +370,6 @@ class ImageGenerationService:
         else:
             pipeline_type = "txt2img"
         generate_data = {
-            "key": api_key,
             "prompt": prompt,
             "model_name": model_name,
             "pipeline_type": pipeline_type,
@@ -418,7 +417,6 @@ class ImageGenerationService:
         conditional_image = self.pil_image_to_base64(conditional_image)
 
         generate_data = {
-            "key": api_key,
             "prompt": prompt,
             "model_name": model_name,
             "conditional_image": conditional_image,
@@ -459,7 +457,6 @@ class ImageGenerationService:
         conditional_image = self.pil_image_to_base64(conditional_image)
 
         generate_data = {
-            "key": api_key,
             "prompt": prompt,
             "model_name": model_name,
             "conditional_image": conditional_image,
@@ -500,7 +497,6 @@ class ImageGenerationService:
         conditional_image = self.pil_image_to_base64(conditional_image)
 
         generate_data = {
-            "key": api_key,
             "prompt": prompt,
             "model_name": model_name,
             "conditional_image": conditional_image,
@@ -541,7 +537,6 @@ class ImageGenerationService:
         conditional_image = self.pil_image_to_base64(conditional_image)
 
         generate_data = {
-            "key": api_key,
             "prompt": prompt,
             "model_name": model_name,
             "conditional_image": conditional_image,
@@ -564,7 +559,6 @@ class ImageGenerationService:
         messages_str = self.tokenizers[data.model].apply_chat_template(data.messages, tokenize=False)
         print(f"Chat message str: {messages_str}", flush=True)
         generate_data = {
-            "key": api_key,
             "prompt_input": messages_str,
             "model_name": data.model,
             "pipeline_params": {
