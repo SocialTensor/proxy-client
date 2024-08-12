@@ -12,7 +12,7 @@ import bittensor as bt
 import httpx
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, Header, HTTPException, Depends, Request
 from PIL import Image
 from threading import Thread
 from constants import API_RATE_LIMIT, ModelName
