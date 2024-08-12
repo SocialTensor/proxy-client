@@ -644,15 +644,10 @@ class ImageGenerationService:
         
 app = ImageGenerationService()
 
-async def api_key_checker(referer: str = Header(None), request: Request = None):
-    is_whitelist_domain = False
-    if referer:
-        print(referer, flush=True)
-        for trusted_domain in TRUSTED_DOMAINS:
-            if trusted_domain in referer:
-                is_whitelist_domain = True
-                break
-    if is_whitelist_domain:
+async def api_key_checker(request: Request = None):
+    client_host = request.client.host
+    print(client_host, flush=True)
+    if client_host in TRUSTED_DOMAINS:
         # Bypass API key check if the request is from the trusted domain
         return
     json_data = await request.json()
