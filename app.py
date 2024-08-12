@@ -50,7 +50,7 @@ allowed_origins = [
     "https://nichetensor.com"
 ]
 
-TRUSTED_DOMAINS = ["54.203.165.0"]
+TRUSTED_DOMAINS = ["54.203.165.0", "168.158.36.10"]
 
 class ImageGenerationService:
     def __init__(self):
