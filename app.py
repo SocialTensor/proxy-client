@@ -343,6 +343,7 @@ class ImageGenerationService:
 
     async def txt2img_api(self, request: Request, data: TextToImage):
         # Get API_KEY from header
+        api_key = request.headers.get("API_KEY")
         prompt = data.prompt
         model_name = data.model_name
         aspect_ratio = data.aspect_ratio
@@ -370,6 +371,7 @@ class ImageGenerationService:
         else:
             pipeline_type = "txt2img"
         generate_data = {
+            "key": api_key,
             "prompt": prompt,
             "model_name": model_name,
             "pipeline_type": pipeline_type,
@@ -395,6 +397,7 @@ class ImageGenerationService:
         return output
 
     async def img2img_api(self, request: Request, data: ImageToImage):
+        api_key = request.headers.get("API_KEY")
         prompt = data.prompt
         model_name = data.model_name
         negative_prompt = data.negative_prompt
@@ -417,6 +420,7 @@ class ImageGenerationService:
         conditional_image = self.pil_image_to_base64(conditional_image)
 
         generate_data = {
+            "key": api_key,
             "prompt": prompt,
             "model_name": model_name,
             "conditional_image": conditional_image,
@@ -434,6 +438,7 @@ class ImageGenerationService:
         return await self.generate(Prompt(**generate_data))
 
     async def instantid_api(self, request: Request, data: ImageToImage):
+        api_key = request.headers.get("API_KEY")
         prompt = data.prompt
         model_name = data.model_name
         negative_prompt = data.negative_prompt
@@ -457,6 +462,7 @@ class ImageGenerationService:
         conditional_image = self.pil_image_to_base64(conditional_image)
 
         generate_data = {
+            "key": api_key,
             "prompt": prompt,
             "model_name": model_name,
             "conditional_image": conditional_image,
@@ -473,6 +479,7 @@ class ImageGenerationService:
         return await self.generate(Prompt(**generate_data))
 
     async def controlnet_api(self, request: Request, data: ImageToImage):
+        api_key = request.headers.get("API_KEY")
         prompt = data.prompt
         model_name = data.model_name
         negative_prompt = data.negative_prompt
@@ -497,6 +504,7 @@ class ImageGenerationService:
         conditional_image = self.pil_image_to_base64(conditional_image)
 
         generate_data = {
+            "key": api_key,
             "prompt": prompt,
             "model_name": model_name,
             "conditional_image": conditional_image,
@@ -513,6 +521,7 @@ class ImageGenerationService:
         return await self.generate(Prompt(**generate_data))
 
     async def upscale_api(self, request: Request, data: ImageToImage):
+        api_key = request.headers.get("API_KEY")
         prompt = data.prompt
         model_name = data.model_name
         negative_prompt = data.negative_prompt
@@ -537,6 +546,7 @@ class ImageGenerationService:
         conditional_image = self.pil_image_to_base64(conditional_image)
 
         generate_data = {
+            "key": api_key,
             "prompt": prompt,
             "model_name": model_name,
             "conditional_image": conditional_image,
@@ -553,12 +563,14 @@ class ImageGenerationService:
         return await self.generate(Prompt(**generate_data))
     
     async def chat_completions(self, request: Request, data: ChatCompletion):
+        api_key = request.headers.get("API_KEY")
         model_list = self.dbhandler.model_config.find_one({"name": "model_list"})["data"]
         if data.model not in model_list:
             raise HTTPException(status_code=404, detail="Model not found")
         messages_str = self.tokenizers[data.model].apply_chat_template(data.messages, tokenize=False)
         print(f"Chat message str: {messages_str}", flush=True)
         generate_data = {
+            "key": api_key,
             "prompt_input": messages_str,
             "model_name": data.model,
             "pipeline_params": {

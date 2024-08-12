@@ -1,6 +1,7 @@
 from pydantic import BaseModel
 
 class Prompt(BaseModel):
+    key: str
     prompt: str
     model_name: str
     pipeline_type: str = "txt2img"
@@ -11,6 +12,7 @@ class Prompt(BaseModel):
 
 
 class TextPrompt(BaseModel):
+    key: str
     prompt_input: str
     model_name: str
     pipeline_params: dict = {}
