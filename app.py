@@ -47,7 +47,8 @@ MONGO_DB_PASSWORD = os.getenv("MONGO_DB_PASSWORD")
 # Define a list of allowed origins (domains)
 allowed_origins = [
     "http://localhost:3000",  # Change this to the domain you want to allow
-    "https://nichetensor.com"
+    "https://nichetensor.com",
+    "http://54.203.165.0:3000"
 ]
 
 TRUSTED_DOMAINS = ["54.203.165.0", "168.158.36.10"]
