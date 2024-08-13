@@ -707,13 +707,13 @@ async def upscale_api(request: Request, data: ImageToImage):
 async def chat_completions_api(request: Request, data: ChatCompletion):
     return await app.chat_completions(request, data)
 
-@app.app.post("/api/v1/signin", dependencies=[Depends(api_key_checker)])
+@app.app.post("/api/v1/signin")
 @limiter.limit(API_RATE_LIMIT) # Update the rate limit
 def signin(request: Request, data: UserSigninInfo):
     user = app.signin(request, data)
     return {"message": "User signed in successfully", "user": user}
 
-@app.app.post("/api/v1/signup", dependencies=[Depends(api_key_checker)])
+@app.app.post("/api/v1/signup")
 @limiter.limit(API_RATE_LIMIT) # Update the rate limit
 def signup(request: Request, data: UserSigninInfo):
     insert_result = app.signup(request, data)
