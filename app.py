@@ -564,7 +564,7 @@ class ImageGenerationService:
         return await self.generate(Prompt(**generate_data))
     
     async def chat_completions(self, request: Request, data: ChatCompletion):
-        api_key = request.headers.get("API_KEY")
+        api_key = request.headers.get("API_KEY") or request.headers.get("Authorization").replace("Bearer ", "")
         model_list = self.dbhandler.model_config.find_one({"name": "model_list"})["data"]
         if data.model not in model_list:
             raise HTTPException(status_code=404, detail="Model not found")
