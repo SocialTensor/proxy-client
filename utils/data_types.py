@@ -12,9 +12,9 @@ class Prompt(BaseModel):
 
 
 class TextPrompt(BaseModel):
-    key: str
-    prompt_input: str
-    model_name: str
+    key: str = ""
+    prompt_input: str = ""
+    model_name: str = ""
     pipeline_params: dict = {}
     seed: int = 0
 
