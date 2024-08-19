@@ -658,7 +658,7 @@ async def api_key_checker(request: Request = None):
         # Bypass API key check if the request is from the trusted domain
         return
     json_data = await request.json()
-    api_key = request.headers.get("API_KEY") or json_data.get("key") or request.headers.get("Authorization")
+    api_key = request.headers.get("API_KEY") or json_data.get("key") or request.headers.get("Authorization").replace("Bearer ", "")
     if not api_key or api_key not in app.dbhandler.get_auth_keys():
         raise HTTPException(status_code=403, detail="Invalid or missing API key")
 
