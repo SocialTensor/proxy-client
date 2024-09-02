@@ -290,8 +290,17 @@ class ImageGenerationService:
                 
                 self.auth_keys[prompt.key]["credit"] -= self.model_list[prompt.model_name].get("credit_cost", 0.001)
                 
+                # Convert prompt.key to ObjectId if it's a string
+                key_id = self.auth_keys[prompt.key]['temp_id']
+                
+                # Create a copy of the dictionary to avoid modifying the original
+                update_data = self.auth_keys[prompt.key].copy()
+                update_data["_id"] = update_data["temp_id"]
+
+                # Remove the _id field if it exists
+                update_data.pop("temp_id", None)
                 self.dbhandler.auth_keys_collection.update_one(
-                    {"_id": prompt.key}, {"$set": self.auth_keys[prompt.key]}
+                    {"_id": key_id}, {"$set": update_data}
                 )
             except Exception as e:
                 print(f"Failed to update validator - MongoDB: {e}", flush=True)

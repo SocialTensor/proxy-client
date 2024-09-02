@@ -51,6 +51,7 @@ class MongoDBHandler(DBBase):
     auth_keys = {}
     for doc in self.auth_keys_collection.find():
         key = str(doc["_id"]) if isinstance(doc["_id"], ObjectId) else doc["_id"]
+        doc["temp_id"] = doc["_id"]
         doc["_id"] = key  # Update the _id in the document itself
         auth_keys[key] = doc
     
