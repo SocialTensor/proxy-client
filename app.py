@@ -51,8 +51,6 @@ allowed_origins = [
     "http://54.203.165.0:3000"
 ]
 
-TRUSTED_DOMAINS = ["54.203.165.0", "168.158.36.10"]
-
 class ImageGenerationService:
     def __init__(self):
         self.subtensor = bt.subtensor("finney")
@@ -288,7 +286,10 @@ class ImageGenerationService:
                 self.auth_keys[prompt.key].setdefault("request_count", 0)
                 self.auth_keys[prompt.key]["request_count"] += 1
                 
-                self.auth_keys[prompt.key]["credit"] -= self.model_list[prompt.model_name].get("credit_cost", 0.001)
+                self.auth_keys[prompt.key]["credit"] = round(
+                    self.auth_keys[prompt.key]["credit"] - self.model_list[prompt.model_name].get("credit_cost", 0.001),
+                    3
+                )
                 
                 # Convert prompt.key to ObjectId if it's a string
                 key_id = self.auth_keys[prompt.key]['temp_id']
@@ -657,16 +658,31 @@ class ImageGenerationService:
             created_user["_id"] = str(created_user["_id"])
         
         return created_user
+    
+    def get_user_info(self, request: Request):
+        try:
+            api_key = request.headers.get("API_KEY")
+            user_info = self.auth_keys[api_key]
+            if user_info:
+                # Convert any non-serializable types (like ObjectId) to strings
+                serializable_user_info = {k: str(v) if isinstance(v, ObjectId) else v for k, v in user_info.items()}
+                return serializable_user_info
+            else:
+                raise HTTPException(status_code=404, detail="User not found")
+        except Exception as e:
+            print(f"Error in get_user_info: {str(e)}")
+            raise HTTPException(status_code=500, detail="An error occurred while fetching user data")
         
 app = ImageGenerationService()
 
 async def api_key_checker(request: Request = None):
     client_host = request.client.host
     print(client_host, flush=True)
-    if client_host in TRUSTED_DOMAINS:
-        # Bypass API key check if the request is from the trusted domain
-        return
-    json_data = await request.json()
+    try:
+        json_data = await request.json()
+    except Exception as e:
+        print(e, flush=True)
+        json_data = {}
     api_key = request.headers.get("API_KEY") or json_data.get("key") or request.headers.get("Authorization").replace("Bearer ", "")
     if not api_key or api_key not in app.dbhandler.get_auth_keys():
         raise HTTPException(status_code=403, detail="Invalid or missing API key")
@@ -730,3 +746,12 @@ def signup(request: Request, data: UserSigninInfo):
         return {"message": "User created successfully", "user": insert_result}
     else:
         raise HTTPException(status_code=500, detail="Failed to create user")
+
+@app.app.get("/api/v1/get_user_info", dependencies=[Depends(api_key_checker)])
+@limiter.limit(API_RATE_LIMIT) # Update the rate limit
+def get_user_info(request: Request):
+    userInfo = app.get_user_info(request)
+    if userInfo:
+        return {"message": "User data fetched successfully", "user": userInfo}
+    else:
+        raise HTTPException(status_code=500, detail="Failed to fetch user data")
