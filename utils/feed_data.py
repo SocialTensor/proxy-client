@@ -128,5 +128,13 @@ MODEL_CONFIG_FEED = [
         1360
       ]
     }
+  },
+  {
+    "_id:" "669f7352305c0200075cfef7",
+    "name": "tokenizer",
+    "data": {
+        "Gemma7b": "alpindale/gemma-7b-it",
+        "Llama3_70b": "casperhansen/llama-3-70b-instruct-awq"
+    }
   }
 ]
