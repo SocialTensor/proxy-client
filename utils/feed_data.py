@@ -130,7 +130,7 @@ MODEL_CONFIG_FEED = [
     }
   },
   {
-    "_id:" "669f7352305c0200075cfef7",
+    "_id": "669f7352305c0200075cfef7",
     "name": "tokenizer",
     "data": {
         "Gemma7b": "alpindale/gemma-7b-it",
