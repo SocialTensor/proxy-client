@@ -41,10 +41,10 @@ def pil_image_to_base64(image: Image.Image, format="JPEG") -> str:
     return base64_image
 
 
-MONGO_DB_USERNAME = os.getenv("MONGO_DB_USERNAME")
-MONGO_DB_PASSWORD = os.getenv("MONGO_DB_PASSWORD")
-MONGO_DB_HOST = os.getenv("MONGO_DB_HOST", "localhost")
-MONGO_DB_PORT = os.getenv("MONGO_DB_PORT", 27017)
+MONGOUSER = os.getenv("MONGOUSER")
+MONGOPASSWORD = os.getenv("MONGOPASSWORD")
+MONGOHOST = os.getenv("MONGOHOST", "localhost")
+MONGOPORT = os.getenv("MONGOPORT", 27017)
 
 # Define a list of allowed origins (domains)
 allowed_origins = [
@@ -57,7 +57,7 @@ class ImageGenerationService:
     def __init__(self):
         self.subtensor = bt.subtensor("finney")
         self.metagraph = self.subtensor.metagraph(23)
-        mongoDBConnectUri = f"mongodb://{MONGO_DB_USERNAME}:{MONGO_DB_PASSWORD}@{MONGO_DB_HOST}:{MONGO_DB_PORT}"
+        mongoDBConnectUri = f"mongodb://{MONGOUSER}:{MONGOPASSWORD}@{MONGOHOST}:{MONGOPORT}"
         self.dbhandler = MongoDBHandler(mongoDBConnectUri, )
         # verify db connection
         print(self.dbhandler.client.server_info())
