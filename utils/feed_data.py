@@ -92,6 +92,17 @@ MODEL_CONFIG_FEED = [
           "img2img"
         ],
         "credit_cost": 0.001
+      },
+      "OpenCategory": {
+        "supporting_pipelines": [
+          "txt2img"
+        ],
+        "default_params": {
+          "num_inference_steps": 8,
+          "clip_skip": 2,
+          "guidance_scale": 2
+        },
+        "credit_cost": 0.001
       }
     }
   },
