@@ -58,6 +58,7 @@ class ImageGenerationService:
         self.subtensor = bt.subtensor("finney")
         self.metagraph = self.subtensor.metagraph(23)
         mongoDBConnectUri = f"mongodb://{MONGOUSER}:{MONGOPASSWORD}@{MONGOHOST}:{MONGOPORT}"
+        print(mongoDBConnectUri)
         self.dbhandler = MongoDBHandler(mongoDBConnectUri, )
         # verify db connection
         print(self.dbhandler.client.server_info())
