@@ -2,10 +2,9 @@ import asyncio
 import base64
 import io
 import os
-from bson import ObjectId
 import requests
 import random
-from datetime import date
+from datetime import datetime, date
 from typing import Dict, List, Union
 import time
 import bittensor as bt
@@ -15,21 +14,28 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from fastapi import FastAPI, Header, HTTPException, Depends, Request
 from PIL import Image
 from threading import Thread
-from constants import API_RATE_LIMIT, ModelName
+from constants import API_RATE_LIMIT, PRO_API_RATE_LIMIT, ModelName
 from slowapi import Limiter
 from slowapi.util import get_remote_address
 from prometheus_fastapi_instrumentator import Instrumentator
 from PIL import Image
-from utils.data_types import Prompt, TextPrompt, TextToImage, ImageToImage, UserSigninInfo, ValidatorInfo, ChatCompletion
+from utils.data_types import APIKey, Prompt, TextPrompt, TextToImage, ImageToImage, UserSigninInfo, ValidatorInfo, ChatCompletion
 from utils.db_client import MongoDBHandler
 from fastapi.middleware.cors import CORSMiddleware
-from utils.common import check_password, hash_password
 from transformers import AutoTokenizer
+from auth.index import AuthService  # Import AuthService
 
 def get_api_key(request: Request):
     return request.headers.get("API_KEY", get_remote_address(request))
 
 limiter = Limiter(key_func=get_api_key)
+def dynamic_rate_limit(request: Request):  # Add request parameter
+    # check if the user's role is pro or standard
+    # user_role = request.headers.get("User-Role", "default")  # Example header
+    # if user_role == "pro":
+    #     return PRO_API_RATE_LIMIT  # Premium users get a higher limit
+    # else:
+    return API_RATE_LIMIT  # Default limit for regular users
 
 def pil_image_to_base64(image: Image.Image, format="JPEG") -> str:
     if format not in ["JPEG", "PNG"]:
@@ -618,62 +624,10 @@ class ImageGenerationService:
         image = image.resize((W, H))
         return image
 
-    def signin(self, request: Request, data: UserSigninInfo):
-        userInfo = self.dbhandler.auth_keys_collection.find_one({"email": data.email})
-        if userInfo:
-            if check_password(data.password, userInfo["password"]):
-                userInfo["_id"] = str(userInfo["_id"])
-                userInfo.pop('password', None)
-                return userInfo
-            else:
-                raise HTTPException(
-                    status_code=400, detail="User credentials are incorrect!"
-                )
-        else:
-            raise HTTPException(
-                status_code=400, detail="User does not exist!"
-            )
-
-    def signup(self, request: Request, data: UserSigninInfo):
-        userInfo = self.dbhandler.auth_keys_collection.find_one({"email": data.email})
-        if userInfo:
-            raise HTTPException(
-                status_code=400, detail="User with the same email already exists!"
-            )
-        
-        userInfo = self.dbhandler.auth_keys_collection.insert_one({
-            "email": data.email,
-            "request_count": 0,
-            "password": hash_password(data.password),
-            "credit": 10
-        })
-        # Retrieve the inserted user document using the inserted ID
-        created_user = self.dbhandler.auth_keys_collection.find_one(
-            {"_id": ObjectId(userInfo.inserted_id)},
-            {"password": 0}
-        )
-        
-        # Optionally, convert the ObjectId to string if returning as JSON
-        if created_user:
-            created_user["_id"] = str(created_user["_id"])
-        
-        return created_user
-    
-    def get_user_info(self, request: Request):
-        try:
-            api_key = request.headers.get("API_KEY")
-            user_info = self.auth_keys[api_key]
-            if user_info:
-                # Convert any non-serializable types (like ObjectId) to strings
-                serializable_user_info = {k: str(v) if isinstance(v, ObjectId) else v for k, v in user_info.items()}
-                return serializable_user_info
-            else:
-                raise HTTPException(status_code=404, detail="User not found")
-        except Exception as e:
-            print(f"Error in get_user_info: {str(e)}")
-            raise HTTPException(status_code=500, detail="An error occurred while fetching user data")
-        
 app = ImageGenerationService()
+
+# Initialize AuthService with the dbhandler
+auth_service = AuthService(app.dbhandler)  
 
 async def api_key_checker(request: Request = None):
     client_host = request.client.host
@@ -735,13 +689,13 @@ async def chat_completions_api(request: Request, data: ChatCompletion):
 @app.app.post("/api/v1/signin")
 @limiter.limit(API_RATE_LIMIT) # Update the rate limit
 def signin(request: Request, data: UserSigninInfo):
-    user = app.signin(request, data)
+    user = auth_service.signin(request, data)
     return {"message": "User signed in successfully", "user": user}
 
 @app.app.post("/api/v1/signup")
 @limiter.limit(API_RATE_LIMIT) # Update the rate limit
 def signup(request: Request, data: UserSigninInfo):
-    insert_result = app.signup(request, data)
+    insert_result = auth_service.signup(request, data)
     if insert_result:
         return {"message": "User created successfully", "user": insert_result}
     else:
@@ -749,9 +703,36 @@ def signup(request: Request, data: UserSigninInfo):
 
 @app.app.get("/api/v1/get_user_info", dependencies=[Depends(api_key_checker)])
 @limiter.limit(API_RATE_LIMIT) # Update the rate limit
-def get_user_info(request: Request):
-    userInfo = app.get_user_info(request)
+async def get_user_info(request: Request):
+    userInfo = auth_service.get_user_info(request)
     if userInfo:
         return {"message": "User data fetched successfully", "user": userInfo}
     else:
         raise HTTPException(status_code=500, detail="Failed to fetch user data")
+
+@app.app.get("/api/v1/add_api_key", dependencies=[Depends(api_key_checker)])
+@limiter.limit(API_RATE_LIMIT) # Update the rate limit
+def add_api_key(request: Request):
+    apiKey = auth_service.add_api_key(request)
+    if apiKey:
+        return {"message": "New api key generated", "user": apiKey}
+    else:
+        raise HTTPException(status_code=500, detail="Failed to add API key")
+
+@app.app.post("/api/v1/delete_api_key", dependencies=[Depends(api_key_checker)])
+@limiter.limit(API_RATE_LIMIT) # Update the rate limit
+def delete_api_key(request: Request, data: APIKey):
+    apiKey = auth_service.delete_api_key(request, data.key)
+    if apiKey:
+        return {"message": "API key deleted", "user": apiKey}
+    else:
+        raise HTTPException(status_code=500, detail="Failed to delete API key")
+    
+@app.app.get("/api/v1/get_logs", dependencies=[Depends(api_key_checker)])
+@limiter.limit(API_RATE_LIMIT) # Update the rate limit
+def get_logs(request: Request):
+    logs = auth_service.get_logs(request)
+    if logs:
+        return {"message": "Retrieved Logs", "logs": logs}
+    else:
+        raise HTTPException(status_code=500, detail="Failed to get logs")
