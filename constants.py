@@ -2,6 +2,7 @@ from enum import Enum
 
 # UPDATE THIS WITH THE REQUIREMENT
 API_RATE_LIMIT = "120/minute" # 120 requests per minute for the API. 
+PRO_API_RATE_LIMIT = "1000/minute"
 
 DB_NAME = "image_generation_service"
 
@@ -20,3 +21,11 @@ class CollectionName(Enum):
   AUTH_KEYS = "auth_keys"
   MODEL_CONFIG = "model_config"
   PRIVATE_KEY = "private_key"
+  LOGS = "logs"
+  
+class LOGS_ACTION(Enum):
+  SIGNUP = "User Sign Up"
+  SIGNIN = "User Sign In"
+  APICALL = "API call"
+  CREATE_API_KEY = "Create API key"
+  DELETE_API_KEY = "Delete API key"

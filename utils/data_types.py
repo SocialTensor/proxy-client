@@ -53,3 +53,6 @@ class ChatCompletion(BaseModel):
     temperature: float = 1
     top_p: float = 1
     max_tokens: int = 128
+    
+class APIKey(BaseModel):
+    key: str
