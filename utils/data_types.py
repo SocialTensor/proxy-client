@@ -18,6 +18,14 @@ class TextPrompt(BaseModel):
     pipeline_params: dict = {}
     seed: int = 0
 
+class MultimodalPrompt(BaseModel):
+    key: str = ""
+    prompt: str = ""
+    image_url: str = ""
+    model_name: str = ""
+    pipeline_params: dict = {}
+    seed: int = 0
+
 
 class TextToImage(BaseModel):
     prompt: str
