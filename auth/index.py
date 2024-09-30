@@ -1,3 +1,4 @@
+import uuid
 from fastapi import HTTPException, Request
 from utils.common import check_password, hash_password
 from utils.data_types import UserSigninInfo, APIKey
@@ -32,18 +33,20 @@ class AuthService:
                 status_code=400, detail="User with the same email already exists!"
             )
 
+        user_id = str(uuid.uuid4())
         userInfo = self.dbhandler.auth_keys_collection.insert_one(
             {
+                "_id": user_id,
                 "email": data.email,
                 "request_count": 0,
                 "password": hash_password(data.password),
                 "credit": 10,
                 "created_date": datetime.utcnow(),
-                "api_keys": [{"key": str(ObjectId()), "created": datetime.utcnow()}],
+                "api_keys": [{"key": str(uuid.uuid4()), "created": datetime.utcnow()}],
             }
         )
         created_user = self.dbhandler.auth_keys_collection.find_one(
-            {"_id": ObjectId(userInfo.inserted_id)}, {"password": 0}
+            {"_id": user_id}, {"password": 0}
         )
         if created_user:
             created_user["_id"] = str(created_user["_id"])
@@ -72,7 +75,7 @@ class AuthService:
         try:
             api_key = request.headers.get("API_KEY")
             key_id = self.auth_keys[api_key]["temp_id"]
-            new_api_key = {"key": str(ObjectId()), "created": datetime.utcnow()}
+            new_api_key = {"key": str(uuid.uuid4()), "created": datetime.utcnow()}
             self.dbhandler.auth_keys_collection.update_one(
                 {"_id": key_id}, {"$push": {"api_keys": new_api_key}}
             )
