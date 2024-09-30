@@ -14,7 +14,7 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from fastapi import FastAPI, Header, HTTPException, Depends, Request
 from PIL import Image
 from threading import Thread
-from constants import API_RATE_LIMIT, PRO_API_RATE_LIMIT, ModelName
+from constants import API_RATE_LIMIT, LOGS_ACTION, PRO_API_RATE_LIMIT, ModelName
 from slowapi import Limiter
 from slowapi.util import get_remote_address
 from prometheus_fastapi_instrumentator import Instrumentator
@@ -23,7 +23,7 @@ from utils.data_types import APIKey, Prompt, TextPrompt, TextToImage, ImageToIma
 from utils.db_client import MongoDBHandler
 from fastapi.middleware.cors import CORSMiddleware
 from transformers import AutoTokenizer
-from auth.index import AuthService  # Import AuthService
+from auth.index import AuthService
 
 def get_api_key(request: Request):
     return request.headers.get("API_KEY", get_remote_address(request))
@@ -63,6 +63,7 @@ class ImageGenerationService:
     def __init__(self):
         self.subtensor = bt.subtensor("finney")
         self.metagraph = self.subtensor.metagraph(23)
+        # mongoDBConnectUri = f"mongodb://localhost:27017"
         mongoDBConnectUri = f"mongodb://{MONGOUSER}:{MONGOPASSWORD}@{MONGOHOST}:{MONGOPORT}"
         print(mongoDBConnectUri)
         self.dbhandler = MongoDBHandler(mongoDBConnectUri, )
@@ -201,6 +202,7 @@ class ImageGenerationService:
             return True, ""
 
     async def generate(self, prompt: Union[Prompt, TextPrompt]):
+        self.auth_keys = self.dbhandler.get_auth_keys()
         if prompt.model_name not in self.model_list:
             raise HTTPException(status_code=404, detail="Model not found")
         if self.auth_keys[prompt.key]["credit"] < self.model_list[prompt.model_name].get("credit_cost", 0.001):
@@ -311,11 +313,15 @@ class ImageGenerationService:
                 self.dbhandler.auth_keys_collection.update_one(
                     {"_id": key_id}, {"$set": update_data}
                 )
+                
+                auth_service.log_user_activity(prompt.key, LOGS_ACTION.APICALL.value, "Generated image", 200, prompt.model_name, 0)
             except Exception as e:
                 print(f"Failed to update validator - MongoDB: {e}", flush=True)
         if not output:
             if not len(self.available_validators):
+                auth_service.log_user_activity(prompt.key, LOGS_ACTION.APICALL.value, "No available validators", 404, prompt.model_name, 0)
                 raise HTTPException(status_code=404, detail="No available validators")
+            auth_service.log_user_activity(prompt.key, LOGS_ACTION.APICALL.value, "All validators failed", 500, prompt.model_name, 0)
             raise HTTPException(status_code=500, detail="All validators failed")
         return output
 
