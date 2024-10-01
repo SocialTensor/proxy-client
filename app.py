@@ -153,7 +153,7 @@ class ImageGenerationService:
     async def get_credentials(
         self, request: Request, validator_info: ValidatorInfo
     ) -> Dict:
-        client_ip = request.client.host
+        client_ip = request.headers.get('X-Real-Ip') or request.client.host
         uid = validator_info.uid
         hotkey = self.metagraph.hotkeys[uid]
         postfix = validator_info.postfix
