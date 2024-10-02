@@ -92,6 +92,17 @@ MODEL_CONFIG_FEED = [
           "img2img"
         ],
         "credit_cost": 0.001
+      },
+      "OpenCategory": {
+        "supporting_pipelines": [
+          "txt2img"
+        ],
+        "default_params": {
+          "num_inference_steps": 8,
+          "clip_skip": 2,
+          "guidance_scale": 2
+        },
+        "credit_cost": 0.001
       }
     }
   },
@@ -127,6 +138,14 @@ MODEL_CONFIG_FEED = [
         768,
         1360
       ]
+    }
+  },
+  {
+    "_id": "669f7352305c0200075cfef7",
+    "name": "tokenizer",
+    "data": {
+        "Gemma7b": "alpindale/gemma-7b-it",
+        "Llama3_70b": "casperhansen/llama-3-70b-instruct-awq"
     }
   }
 ]
