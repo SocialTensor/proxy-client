@@ -43,6 +43,7 @@ class AuthService:
                 "credit": 10,
                 "created_date": datetime.utcnow(),
                 "api_keys": [{"key": str(uuid.uuid4()), "created": datetime.utcnow()}],
+                "usage": []
             }
         )
         created_user = self.dbhandler.auth_keys_collection.find_one(
@@ -60,6 +61,7 @@ class AuthService:
             user_info = self.auth_keys[api_key]
             if user_info:
                 user_info.pop("password", None)
+                user_info.pop("temp_id", None)
                 return {
                     k: str(v) if isinstance(v, ObjectId) else v
                     for k, v in user_info.items()

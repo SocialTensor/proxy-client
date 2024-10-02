@@ -296,10 +296,17 @@ class ImageGenerationService:
                 self.auth_keys[prompt.key].setdefault("request_count", 0)
                 self.auth_keys[prompt.key]["request_count"] += 1
                 
+                model_cost = self.model_list[prompt.model_name].get("credit_cost", 0.001)
                 self.auth_keys[prompt.key]["credit"] = round(
-                    self.auth_keys[prompt.key]["credit"] - self.model_list[prompt.model_name].get("credit_cost", 0.001),
+                    self.auth_keys[prompt.key]["credit"] - model_cost,
                     3
                 )
+                self.auth_keys[prompt.key]["usage"].append({
+                    "model_name": prompt.model_name,
+                    "pipeline_type": prompt.pipeline_type,
+                    "credit_cost": model_cost,
+                    "timestamp": datetime.utcnow(),
+                })
                 
                 # Convert prompt.key to ObjectId if it's a string
                 key_id = self.auth_keys[prompt.key]['temp_id']
@@ -314,7 +321,7 @@ class ImageGenerationService:
                     {"_id": key_id}, {"$set": update_data}
                 )
                 
-                auth_service.log_user_activity(prompt.key, LOGS_ACTION.APICALL.value, "Generated image", 200, prompt.model_name, 0)
+                auth_service.log_user_activity(prompt.key, LOGS_ACTION.APICALL.value, prompt.pipeline_type, 200, prompt.model_name, model_cost)
             except Exception as e:
                 print(f"Failed to update validator - MongoDB: {e}", flush=True)
         if not output:
