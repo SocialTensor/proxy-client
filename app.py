@@ -301,12 +301,22 @@ class ImageGenerationService:
                     self.auth_keys[prompt.key]["credit"] - model_cost,
                     3
                 )
-                self.auth_keys[prompt.key]["usage"].append({
-                    "model_name": prompt.model_name,
-                    "pipeline_type": prompt.pipeline_type,
-                    "credit_cost": model_cost,
-                    "timestamp": datetime.utcnow(),
-                })
+                # Check if "usage" is a valid list before appending
+                if isinstance(self.auth_keys[prompt.key].get("usage"), list):
+                    self.auth_keys[prompt.key]["usage"].append({
+                        "model_name": prompt.model_name,
+                        "pipeline_type": prompt.pipeline_type,
+                        "credit_cost": model_cost,
+                        "timestamp": datetime.utcnow(),
+                    })
+                else:
+                    # Initialize "usage" as a list if it doesn't exist or is not a list
+                    self.auth_keys[prompt.key]["usage"] = [{
+                        "model_name": prompt.model_name,
+                        "pipeline_type": prompt.pipeline_type,
+                        "credit_cost": model_cost,
+                        "timestamp": datetime.utcnow(),
+                    }]
                 
                 # Convert prompt.key to ObjectId if it's a string
                 key_id = self.auth_keys[prompt.key]['temp_id']
