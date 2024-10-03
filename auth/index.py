@@ -76,6 +76,7 @@ class AuthService:
     def add_api_key(self, request: Request):
         try:
             api_key = request.headers.get("API_KEY")
+            self.auth_keys = self.dbhandler.get_auth_keys()
             key_id = self.auth_keys[api_key]["temp_id"]
             new_api_key = {"key": str(uuid.uuid4()), "created": datetime.utcnow()}
             self.dbhandler.auth_keys_collection.update_one(
@@ -102,6 +103,7 @@ class AuthService:
     def delete_api_key(self, request: Request, api_key_data: str):
         try:
             api_key = request.headers.get("API_KEY")
+            self.auth_keys = self.dbhandler.get_auth_keys()
             key_id = self.auth_keys[api_key]["temp_id"]
             result = self.dbhandler.auth_keys_collection.update_one(
                 {"_id": key_id}, {"$pull": {"api_keys": {"key": api_key_data}}}
@@ -131,6 +133,7 @@ class AuthService:
     def get_logs(self, request: Request):
         try:
             api_key = request.headers.get("API_KEY")
+            self.auth_keys = self.dbhandler.get_auth_keys()
             userInfo = self.auth_keys[api_key]
             keys = [api_key] + [key["key"] for key in userInfo["api_keys"]]
             logs = self.dbhandler.logs_collection.find({"api_key": {"$in": keys}})
