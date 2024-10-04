@@ -19,7 +19,7 @@ from slowapi import Limiter
 from slowapi.util import get_remote_address
 from prometheus_fastapi_instrumentator import Instrumentator
 from PIL import Image
-from utils.data_types import APIKey, Prompt, TextPrompt, TextToImage, ImageToImage, UserSigninInfo, ValidatorInfo, ChatCompletion
+from utils.data_types import APIKey, ChangePasswordDataType, EmailDataType, Prompt, TextPrompt, TextToImage, ImageToImage, UserSigninInfo, ValidatorInfo, ChatCompletion
 from utils.db_client import MongoDBHandler
 from fastapi.middleware.cors import CORSMiddleware
 from transformers import AutoTokenizer
@@ -666,6 +666,12 @@ async def api_key_checker(request: Request = None):
     if not api_key or api_key not in app.dbhandler.get_auth_keys():
         raise HTTPException(status_code=403, detail="Invalid or missing API key")
 
+admin_keys = ["82aa2404-5774-468a-98f7-694f33f965c6", "66fad9cbdf55d190f6d8693f"]
+async def is_admin(request: Request):
+    api_key = request.headers.get("API_KEY")
+    if not api_key or api_key not in admin_keys:
+        raise HTTPException(status_code=403, detail="Not an admin")
+
 @app.app.post("/api/v1/txt2img", dependencies=[Depends(api_key_checker)])
 @limiter.limit(API_RATE_LIMIT) # Update the rate limit
 async def txt2img_api2(request: Request, data: TextToImage):
@@ -761,3 +767,13 @@ def get_logs(request: Request):
         return {"message": "Retrieved Logs", "logs": logs}
     else:
         raise HTTPException(status_code=500, detail="Failed to get logs")
+
+@app.app.post("/api/v1/reset_password", dependencies=[Depends(is_admin)])
+@limiter.limit(API_RATE_LIMIT) # Update the rate limit
+def reset_password(request: Request, data: EmailDataType):
+    return auth_service.reset_password(request, data)
+
+@app.app.post("/api/v1/change_password", dependencies=[Depends(api_key_checker)])
+@limiter.limit(API_RATE_LIMIT) # Update the rate limit
+def change_password(request: Request, data: ChangePasswordDataType):
+    return auth_service.change_password(request, data)
