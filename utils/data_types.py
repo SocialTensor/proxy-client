@@ -47,6 +47,14 @@ class UserSigninInfo(BaseModel):
     email: str
     password: str
 
+class EmailDataType(BaseModel):
+    email: str
+
+class ChangePasswordDataType(BaseModel):
+    email: str
+    old_password: str
+    new_password: str
+
 class ChatCompletion(BaseModel):
     model: str
     messages: list[dict]
