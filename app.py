@@ -785,6 +785,5 @@ def get_logs(request: Request):
         raise HTTPException(status_code=500, detail="Failed to get logs")
 
 @app.app.post("/create-payment-intent")
-@limiter.limit(API_RATE_LIMIT) # Update the rate limit
 async def create_payment_intent(request: Request, data: StripePay):
     return await app.create_payment_intent(request, data)
