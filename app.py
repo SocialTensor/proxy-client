@@ -2,10 +2,9 @@ import asyncio
 import base64
 import io
 import os
-from bson import ObjectId
 import requests
 import random
-from datetime import date
+from datetime import datetime, date
 from typing import Dict, List, Union
 import time
 import bittensor as bt
@@ -15,21 +14,30 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from fastapi import FastAPI, Header, HTTPException, Depends, Request
 from PIL import Image
 from threading import Thread
-from constants import API_RATE_LIMIT, ModelName
+from constants import API_RATE_LIMIT, LOGS_ACTION, PRO_API_RATE_LIMIT, ModelName
 from slowapi import Limiter
 from slowapi.util import get_remote_address
 from prometheus_fastapi_instrumentator import Instrumentator
 from PIL import Image
-from utils.data_types import Prompt, TextPrompt, TextToImage, ImageToImage, UserSigninInfo, ValidatorInfo, ChatCompletion
+from utils.data_types import APIKey, ChangePasswordDataType, EmailDataType, Prompt, TextPrompt, TextToImage, ImageToImage, UserSigninInfo, ValidatorInfo, ChatCompletion
 from utils.db_client import MongoDBHandler
 from fastapi.middleware.cors import CORSMiddleware
-from utils.common import check_password, hash_password
 from transformers import AutoTokenizer
+from auth.index import AuthService
+from dotenv import load_dotenv
 
+load_dotenv()
 def get_api_key(request: Request):
     return request.headers.get("API_KEY", get_remote_address(request))
 
 limiter = Limiter(key_func=get_api_key)
+def dynamic_rate_limit(request: Request):  # Add request parameter
+    # check if the user's role is pro or standard
+    # user_role = request.headers.get("User-Role", "default")  # Example header
+    # if user_role == "pro":
+    #     return PRO_API_RATE_LIMIT  # Premium users get a higher limit
+    # else:
+    return API_RATE_LIMIT  # Default limit for regular users
 
 def pil_image_to_base64(image: Image.Image, format="JPEG") -> str:
     if format not in ["JPEG", "PNG"]:
@@ -41,8 +49,10 @@ def pil_image_to_base64(image: Image.Image, format="JPEG") -> str:
     return base64_image
 
 
-MONGO_DB_USERNAME = os.getenv("MONGO_DB_USERNAME")
-MONGO_DB_PASSWORD = os.getenv("MONGO_DB_PASSWORD")
+MONGOUSER = os.getenv("MONGOUSER")
+MONGOPASSWORD = os.getenv("MONGOPASSWORD")
+MONGOHOST = os.getenv("MONGOHOST", "localhost")
+MONGOPORT = os.getenv("MONGOPORT", 27017)
 
 # Define a list of allowed origins (domains)
 allowed_origins = [
@@ -51,14 +61,13 @@ allowed_origins = [
     "http://54.203.165.0:3000"
 ]
 
-TRUSTED_DOMAINS = ["54.203.165.0", "168.158.36.10"]
-
 class ImageGenerationService:
     def __init__(self):
         self.subtensor = bt.subtensor("finney")
         self.metagraph = self.subtensor.metagraph(23)
-        mongoDBConnectUri = f"mongodb://{MONGO_DB_USERNAME}:{MONGO_DB_PASSWORD}@localhost:27017"
         # mongoDBConnectUri = f"mongodb://localhost:27017"
+        mongoDBConnectUri = f"mongodb://{MONGOUSER}:{MONGOPASSWORD}@{MONGOHOST}:{MONGOPORT}"
+        print(mongoDBConnectUri)
         self.dbhandler = MongoDBHandler(mongoDBConnectUri, )
         # verify db connection
         print(self.dbhandler.client.server_info())
@@ -146,7 +155,7 @@ class ImageGenerationService:
     async def get_credentials(
         self, request: Request, validator_info: ValidatorInfo
     ) -> Dict:
-        client_ip = request.client.host
+        client_ip = request.headers.get('X-Real-Ip') or request.client.host
         uid = validator_info.uid
         hotkey = self.metagraph.hotkeys[uid]
         postfix = validator_info.postfix
@@ -195,6 +204,7 @@ class ImageGenerationService:
             return True, ""
 
     async def generate(self, prompt: Union[Prompt, TextPrompt]):
+        self.auth_keys = self.dbhandler.get_auth_keys()
         if prompt.model_name not in self.model_list:
             raise HTTPException(status_code=404, detail="Model not found")
         if self.auth_keys[prompt.key]["credit"] < self.model_list[prompt.model_name].get("credit_cost", 0.001):
@@ -288,16 +298,49 @@ class ImageGenerationService:
                 self.auth_keys[prompt.key].setdefault("request_count", 0)
                 self.auth_keys[prompt.key]["request_count"] += 1
                 
-                self.auth_keys[prompt.key]["credit"] -= self.model_list[prompt.model_name].get("credit_cost", 0.001)
-                
-                self.dbhandler.auth_keys_collection.update_one(
-                    {"_id": prompt.key}, {"$set": self.auth_keys[prompt.key]}
+                model_cost = self.model_list[prompt.model_name].get("credit_cost", 0.001)
+                self.auth_keys[prompt.key]["credit"] = round(
+                    self.auth_keys[prompt.key]["credit"] - model_cost,
+                    3
                 )
+                # Check if "usage" is a valid list before appending
+                if isinstance(self.auth_keys[prompt.key].get("usage"), list):
+                    self.auth_keys[prompt.key]["usage"].append({
+                        "model_name": prompt.model_name,
+                        "pipeline_type": prompt.pipeline_type,
+                        "credit_cost": model_cost,
+                        "timestamp": datetime.utcnow(),
+                    })
+                else:
+                    # Initialize "usage" as a list if it doesn't exist or is not a list
+                    self.auth_keys[prompt.key]["usage"] = [{
+                        "model_name": prompt.model_name,
+                        "pipeline_type": prompt.pipeline_type,
+                        "credit_cost": model_cost,
+                        "timestamp": datetime.utcnow(),
+                    }]
+                
+                # Convert prompt.key to ObjectId if it's a string
+                key_id = self.auth_keys[prompt.key]['temp_id']
+                
+                # Create a copy of the dictionary to avoid modifying the original
+                update_data = self.auth_keys[prompt.key].copy()
+                update_data["_id"] = update_data["temp_id"]
+
+                # Remove the _id field if it exists
+                update_data.pop("temp_id", None)
+                self.dbhandler.auth_keys_collection.update_one(
+                    {"_id": key_id}, {"$set": update_data}
+                )
+                
+                auth_service.log_user_activity(prompt.key, LOGS_ACTION.APICALL.value, prompt.pipeline_type, 200, prompt.model_name, model_cost)
             except Exception as e:
                 print(f"Failed to update validator - MongoDB: {e}", flush=True)
         if not output:
             if not len(self.available_validators):
+                auth_service.log_user_activity(prompt.key, LOGS_ACTION.APICALL.value, "No available validators", 404, prompt.model_name, 0)
                 raise HTTPException(status_code=404, detail="No available validators")
+            auth_service.log_user_activity(prompt.key, LOGS_ACTION.APICALL.value, "All validators failed", 500, prompt.model_name, 0)
             raise HTTPException(status_code=500, detail="All validators failed")
         return output
 
@@ -564,7 +607,7 @@ class ImageGenerationService:
         return await self.generate(Prompt(**generate_data))
     
     async def chat_completions(self, request: Request, data: ChatCompletion):
-        api_key = request.headers.get("API_KEY")
+        api_key = request.headers.get("API_KEY") or request.headers.get("Authorization").replace("Bearer ", "")
         model_list = self.dbhandler.model_config.find_one({"name": "model_list"})["data"]
         if data.model not in model_list:
             raise HTTPException(status_code=404, detail="Model not found")
@@ -608,59 +651,28 @@ class ImageGenerationService:
         image = image.resize((W, H))
         return image
 
-    def signin(self, request: Request, data: UserSigninInfo):
-        userInfo = self.dbhandler.auth_keys_collection.find_one({"email": data.email})
-        if userInfo:
-            if check_password(data.password, userInfo["password"]):
-                userInfo["_id"] = str(userInfo["_id"])
-                userInfo.pop('password', None)
-                return userInfo
-            else:
-                raise HTTPException(
-                    status_code=400, detail="User credentials are incorrect!"
-                )
-        else:
-            raise HTTPException(
-                status_code=400, detail="User does not exist!"
-            )
-
-    def signup(self, request: Request, data: UserSigninInfo):
-        userInfo = self.dbhandler.auth_keys_collection.find_one({"email": data.email})
-        if userInfo:
-            raise HTTPException(
-                status_code=400, detail="User with the same email already exists!"
-            )
-        
-        userInfo = self.dbhandler.auth_keys_collection.insert_one({
-            "email": data.email,
-            "request_count": 0,
-            "password": hash_password(data.password),
-            "credit": 10
-        })
-        # Retrieve the inserted user document using the inserted ID
-        created_user = self.dbhandler.auth_keys_collection.find_one(
-            {"_id": ObjectId(userInfo.inserted_id)},
-            {"password": 0}
-        )
-        
-        # Optionally, convert the ObjectId to string if returning as JSON
-        if created_user:
-            created_user["_id"] = str(created_user["_id"])
-        
-        return created_user
-        
 app = ImageGenerationService()
+
+# Initialize AuthService with the dbhandler
+auth_service = AuthService(app.dbhandler)  
 
 async def api_key_checker(request: Request = None):
     client_host = request.client.host
     print(client_host, flush=True)
-    if client_host in TRUSTED_DOMAINS:
-        # Bypass API key check if the request is from the trusted domain
-        return
-    json_data = await request.json()
-    api_key = request.headers.get("API_KEY") or json_data.get("key")
+    try:
+        json_data = await request.json()
+    except Exception as e:
+        print(e, flush=True)
+        json_data = {}
+    api_key = request.headers.get("API_KEY") or json_data.get("key") or request.headers.get("Authorization").replace("Bearer ", "")
     if not api_key or api_key not in app.dbhandler.get_auth_keys():
         raise HTTPException(status_code=403, detail="Invalid or missing API key")
+
+admin_keys = ["82aa2404-5774-468a-98f7-694f33f965c6", "66fad9cbdf55d190f6d8693f"]
+async def is_admin(request: Request):
+    api_key = request.headers.get("API_KEY")
+    if not api_key or api_key not in admin_keys:
+        raise HTTPException(status_code=403, detail="Not an admin")
 
 @app.app.post("/api/v1/txt2img", dependencies=[Depends(api_key_checker)])
 @limiter.limit(API_RATE_LIMIT) # Update the rate limit
@@ -710,14 +722,60 @@ async def chat_completions_api(request: Request, data: ChatCompletion):
 @app.app.post("/api/v1/signin")
 @limiter.limit(API_RATE_LIMIT) # Update the rate limit
 def signin(request: Request, data: UserSigninInfo):
-    user = app.signin(request, data)
+    user = auth_service.signin(request, data)
     return {"message": "User signed in successfully", "user": user}
 
 @app.app.post("/api/v1/signup")
 @limiter.limit(API_RATE_LIMIT) # Update the rate limit
 def signup(request: Request, data: UserSigninInfo):
-    insert_result = app.signup(request, data)
+    insert_result = auth_service.signup(request, data)
     if insert_result:
         return {"message": "User created successfully", "user": insert_result}
     else:
         raise HTTPException(status_code=500, detail="Failed to create user")
+
+@app.app.get("/api/v1/get_user_info", dependencies=[Depends(api_key_checker)])
+@limiter.limit(API_RATE_LIMIT) # Update the rate limit
+async def get_user_info(request: Request):
+    userInfo = auth_service.get_user_info(request)
+    if userInfo:
+        return {"message": "User data fetched successfully", "user": userInfo}
+    else:
+        raise HTTPException(status_code=500, detail="Failed to fetch user data")
+
+@app.app.get("/api/v1/add_api_key", dependencies=[Depends(api_key_checker)])
+@limiter.limit(API_RATE_LIMIT) # Update the rate limit
+def add_api_key(request: Request):
+    apiKey = auth_service.add_api_key(request)
+    if apiKey:
+        return {"message": "New api key generated", "user": apiKey}
+    else:
+        raise HTTPException(status_code=500, detail="Failed to add API key")
+
+@app.app.post("/api/v1/delete_api_key", dependencies=[Depends(api_key_checker)])
+@limiter.limit(API_RATE_LIMIT) # Update the rate limit
+def delete_api_key(request: Request, data: APIKey):
+    apiKey = auth_service.delete_api_key(request, data.key)
+    if apiKey:
+        return {"message": "API key deleted", "user": apiKey}
+    else:
+        raise HTTPException(status_code=500, detail="Failed to delete API key")
+    
+@app.app.get("/api/v1/get_logs", dependencies=[Depends(api_key_checker)])
+@limiter.limit(API_RATE_LIMIT) # Update the rate limit
+def get_logs(request: Request):
+    logs = auth_service.get_logs(request)
+    if logs:
+        return {"message": "Retrieved Logs", "logs": logs}
+    else:
+        raise HTTPException(status_code=500, detail="Failed to get logs")
+
+@app.app.post("/api/v1/reset_password", dependencies=[Depends(is_admin)])
+@limiter.limit(API_RATE_LIMIT) # Update the rate limit
+def reset_password(request: Request, data: EmailDataType):
+    return auth_service.reset_password(request, data)
+
+@app.app.post("/api/v1/change_password", dependencies=[Depends(api_key_checker)])
+@limiter.limit(API_RATE_LIMIT) # Update the rate limit
+def change_password(request: Request, data: ChangePasswordDataType):
+    return auth_service.change_password(request, data)

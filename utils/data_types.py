@@ -12,9 +12,9 @@ class Prompt(BaseModel):
 
 
 class TextPrompt(BaseModel):
-    key: str
-    prompt_input: str
-    model_name: str
+    key: str = ""
+    prompt_input: str = ""
+    model_name: str = ""
     pipeline_params: dict = {}
     seed: int = 0
 
@@ -47,9 +47,20 @@ class UserSigninInfo(BaseModel):
     email: str
     password: str
 
+class EmailDataType(BaseModel):
+    email: str
+
+class ChangePasswordDataType(BaseModel):
+    email: str
+    old_password: str
+    new_password: str
+
 class ChatCompletion(BaseModel):
     model: str
     messages: list[dict]
     temperature: float = 1
     top_p: float = 1
     max_tokens: int = 128
+    
+class APIKey(BaseModel):
+    key: str

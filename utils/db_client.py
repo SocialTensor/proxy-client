@@ -3,6 +3,7 @@ from bson.json_util import dumps
 from typing import Dict
 from threading import Thread
 import time
+from bson import ObjectId
 
 from utils.db_base import DBBase
 from utils.db_schemas import AuthKeySchema, ValidatorSchema
@@ -21,12 +22,15 @@ class MongoDBHandler(DBBase):
       self.client[dbname].create_collection(CollectionName.AUTH_KEYS.value)
       self.client[dbname].create_collection(CollectionName.PRIVATE_KEY.value)
       self.client[dbname].create_collection(CollectionName.MODEL_CONFIG.value)
+      self.client[dbname].create_collection(CollectionName.LOGS.value)
+      
 
     self.db = self.client[dbname]
     self.validators_collection = self.db[CollectionName.VALIDATORS.value]
     self.auth_keys_collection = self.db[CollectionName.AUTH_KEYS.value]
     self.model_config = self.db[CollectionName.MODEL_CONFIG.value]
     self.private_key = self.db[CollectionName.PRIVATE_KEY.value]
+    self.logs_collection = self.db[CollectionName.LOGS.value]
     
     # Feed data to the collections
     if is_first_time:
@@ -47,7 +51,16 @@ class MongoDBHandler(DBBase):
     return {doc["_id"]: doc for doc in self.validators_collection.find()}
 
   def get_auth_keys(self) -> Dict[str, AuthKeySchema]:
-    auth_keys = {doc["_id"]: doc for doc in self.auth_keys_collection.find()}
+    auth_keys = {}
+    for doc in self.auth_keys_collection.find():
+        key = str(doc["_id"]) if isinstance(doc["_id"], ObjectId) else doc["_id"]
+        doc["temp_id"] = doc["_id"]
+        doc["_id"] = key  # Update the _id in the document itself
+        auth_keys[key] = doc
+        if "api_keys" in doc:
+          for docKey in doc["api_keys"]:
+            auth_keys[docKey["key"]] = doc
+      
     for k, v in auth_keys.items():
       v.setdefault("credit", 10)
     return auth_keys
