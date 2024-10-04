@@ -19,11 +19,16 @@ from slowapi import Limiter
 from slowapi.util import get_remote_address
 from prometheus_fastapi_instrumentator import Instrumentator
 from PIL import Image
-from utils.data_types import APIKey, Prompt, TextPrompt, TextToImage, ImageToImage, UserSigninInfo, ValidatorInfo, ChatCompletion
+from utils.data_types import APIKey, Prompt, TextPrompt, TextToImage, ImageToImage, UserSigninInfo, ValidatorInfo, ChatCompletion, StripePay
 from utils.db_client import MongoDBHandler
 from fastapi.middleware.cors import CORSMiddleware
 from transformers import AutoTokenizer
 from auth.index import AuthService
+import stripe
+import json
+from flask import jsonify
+
+stripe.api_key = 'sk_test_51Q5iIUKOYp5FR06LpLfOsBaUNfqJxUNEFu4GnbZIRlGVmsc91JmeifFoknV9U7NwkANPCMleQ5fHUtt8tn0lzNQF00uW4diQQE'
 
 def get_api_key(request: Request):
     return request.headers.get("API_KEY", get_remote_address(request))
@@ -648,6 +653,23 @@ class ImageGenerationService:
         H = H - H % divisible
         image = image.resize((W, H))
         return image
+    
+    async def create_payment_intent(self, request: Request, data: StripePay):
+        try:
+            data = json.loads(request.data)
+            intent = stripe.PaymentIntent.create(
+                amount=data.price,
+                currency='usd',
+                automatic_payment_methods={
+                    'enabled': True,
+                },
+            )
+            return jsonify({
+                'clientSecret': intent['client_secret'],
+                'dpmCheckerLink': 'https://dashboard.stripe.com/settings/payment_methods/review?transaction_id={}'.format(intent['id']),
+            })
+        except Exception as e:
+            return jsonify(error=str(e)), 403
 
 app = ImageGenerationService()
 
@@ -761,3 +783,8 @@ def get_logs(request: Request):
         return {"message": "Retrieved Logs", "logs": logs}
     else:
         raise HTTPException(status_code=500, detail="Failed to get logs")
+
+@app.app.post("/api/v1/create_payment_intent")
+@limiter.limit(API_RATE_LIMIT) # Update the rate limit
+async def create_payment_intent(request: Request, data: StripePay):
+    return await app.create_payment_intent(request, data)

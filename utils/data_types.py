@@ -56,3 +56,6 @@ class ChatCompletion(BaseModel):
     
 class APIKey(BaseModel):
     key: str
+
+class StripePay(BaseModel):
+    price: int
