@@ -24,7 +24,9 @@ from utils.db_client import MongoDBHandler
 from fastapi.middleware.cors import CORSMiddleware
 from transformers import AutoTokenizer
 from auth.index import AuthService
+from dotenv import load_dotenv
 
+load_dotenv()
 def get_api_key(request: Request):
     return request.headers.get("API_KEY", get_remote_address(request))
 
