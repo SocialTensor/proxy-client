@@ -41,7 +41,7 @@ class UserService:
                 "email": data.email,
                 "request_count": 0,
                 "password": hash_password(data.password),
-                "credit": 10,
+                "credit": 5,
                 "created_date": datetime.utcnow(),
                 "api_keys": [{"key": str(uuid.uuid4()), "created": datetime.utcnow()}],
                 "usage": []
