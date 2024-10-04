@@ -26,6 +26,7 @@ class CollectionName(Enum):
 class LOGS_ACTION(Enum):
   SIGNUP = "User Sign Up"
   SIGNIN = "User Sign In"
+  CHANGE_PASSWORD = "Change Password"
   APICALL = "API call"
   CREATE_API_KEY = "Create API key"
   DELETE_API_KEY = "Delete API key"
