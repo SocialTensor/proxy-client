@@ -52,8 +52,8 @@ class EmailDataType(BaseModel):
 
 class ChangePasswordDataType(BaseModel):
     email: str
-    old_password: str
-    new_password: str
+    oldPassword: str
+    newPassword: str
 
 class ChatCompletion(BaseModel):
     model: str

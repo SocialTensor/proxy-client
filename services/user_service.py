@@ -67,10 +67,16 @@ class UserService:
     def change_password(self, request: Request, data: ChangePasswordDataType):
         userInfo = self.dbhandler.auth_keys_collection.find_one({"email": data.email})
         if userInfo:
-            if check_password(data.old_password, userInfo["password"]):
-                self.dbhandler.auth_keys_collection.update_one({"email": data.email}, {"$set": {"password": hash_password(data.new_password)}})
-                self.log_user_activity(userInfo["_id"], LOGS_ACTION.CHANGE_PASSWORD.value, "Password changed", 200, "", 0)
-                return {"message": "Password changed successfully"}
+            if check_password(data.oldPassword, userInfo["password"]):
+                self.dbhandler.auth_keys_collection.update_one({"email": data.email}, {"$set": {"password": hash_password(data.newPassword)}})
+                self.auth_keys = self.dbhandler.get_auth_keys()
+                api_key = request.headers.get("API_KEY")
+                user_info = self.auth_keys[api_key]
+                if user_info:
+                    user_info.pop("password", None)
+                    user_info.pop("temp_id", None)
+                    self.log_user_activity(api_key, LOGS_ACTION.CHANGE_PASSWORD.value, "Password changed", 200, "", 0)
+                    return {"message": "Password changed successfully", "user": user_info}
             else:
                 raise HTTPException(status_code=400, detail="Old password is incorrect!")
         else:
