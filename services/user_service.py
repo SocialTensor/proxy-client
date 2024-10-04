@@ -6,7 +6,7 @@ from constants import LOGS_ACTION
 from datetime import datetime
 from bson import ObjectId
 
-class AuthService:
+class UserService:
     def __init__(self, dbhandler):
         self.dbhandler = dbhandler
         self.auth_keys = self.dbhandler.get_auth_keys()
