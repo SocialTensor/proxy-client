@@ -4,13 +4,13 @@ from fastapi import HTTPException, Depends, Request
 from constants import API_RATE_LIMIT
 from slowapi import Limiter
 from slowapi.util import get_remote_address
+from utils.db_client import MongoDBHandler
 from services.image_generation_service import ImageGenerationService
 from services.user_service import UserService
 from utils.data_types import APIKey, ChangePasswordDataType, EmailDataType, Prompt, TextPrompt, TextToImage, ImageToImage, UserSigninInfo, ValidatorInfo, ChatCompletion
 from utils.db_client import MongoDBHandler
 from dotenv import load_dotenv
 
-load_dotenv()
 def get_api_key(request: Request):
     return request.headers.get("API_KEY", get_remote_address(request))
 
@@ -23,15 +23,7 @@ def dynamic_rate_limit(request: Request):  # Add request parameter
     # else:
     return API_RATE_LIMIT  # Default limit for regular users
 
-MONGOUSER = os.getenv("MONGOUSER")
-MONGOPASSWORD = os.getenv("MONGOPASSWORD")
-MONGOHOST = os.getenv("MONGOHOST", "localhost")
-MONGOPORT = os.getenv("MONGOPORT", 27017)
-
-# mongoDBConnectUri = f"mongodb://localhost:27017"
-mongoDBConnectUri = f"mongodb://{MONGOUSER}:{MONGOPASSWORD}@{MONGOHOST}:{MONGOPORT}"
-print(mongoDBConnectUri)
-dbhandler = MongoDBHandler(mongoDBConnectUri, )
+dbhandler = MongoDBHandler()
 # verify db connection
 print(dbhandler.client.server_info())
 
