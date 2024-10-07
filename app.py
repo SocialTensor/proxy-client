@@ -70,8 +70,8 @@ class ImageGenerationService:
     def __init__(self):
         self.subtensor = bt.subtensor("finney")
         self.metagraph = self.subtensor.metagraph(23)
-        mongoDBConnectUri = f"mongodb://localhost:27017"
-        # mongoDBConnectUri = f"mongodb://{MONGOUSER}:{MONGOPASSWORD}@{MONGOHOST}:{MONGOPORT}"
+        # mongoDBConnectUri = f"mongodb://localhost:27017"
+        mongoDBConnectUri = f"mongodb://{MONGOUSER}:{MONGOPASSWORD}@{MONGOHOST}:{MONGOPORT}"
         print(mongoDBConnectUri)
         self.dbhandler = MongoDBHandler(mongoDBConnectUri, )
         # verify db connection
@@ -659,7 +659,7 @@ class ImageGenerationService:
     async def create_payment_intent(self, request: Request, data: StripePay):
         try:
             intent = stripe.PaymentIntent.create(
-                amount=data.price,
+                amount=data.price*100,
                 currency='usd',
                 automatic_payment_methods={
                     'enabled': True,
