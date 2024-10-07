@@ -1,12 +1,12 @@
 import uuid
 from fastapi import HTTPException, Request
 from utils.common import check_password, hash_password
-from utils.data_types import UserSigninInfo, APIKey
+from utils.data_types import ChangePasswordDataType, EmailDataType, UserSigninInfo, APIKey
 from constants import LOGS_ACTION
 from datetime import datetime
 from bson import ObjectId
 
-class AuthService:
+class UserService:
     def __init__(self, dbhandler):
         self.dbhandler = dbhandler
         self.auth_keys = self.dbhandler.get_auth_keys()
@@ -20,6 +20,7 @@ class AuthService:
                 self.log_user_activity(userInfo["_id"], LOGS_ACTION.SIGNIN.value, "User logged in", 200, "", 0)
                 return userInfo
             else:
+                self.log_user_activity(userInfo["_id"], LOGS_ACTION.SIGNIN.value, "Tried to log in with incorrect password", 400, "", 0)
                 raise HTTPException(
                     status_code=400, detail="User credentials are incorrect!"
                 )
@@ -40,7 +41,7 @@ class AuthService:
                 "email": data.email,
                 "request_count": 0,
                 "password": hash_password(data.password),
-                "credit": 10,
+                "credit": 5,
                 "created_date": datetime.utcnow(),
                 "api_keys": [{"key": str(uuid.uuid4()), "created": datetime.utcnow()}],
                 "usage": []
@@ -53,6 +54,33 @@ class AuthService:
             created_user["_id"] = str(created_user["_id"])
             self.log_user_activity(created_user["_id"], LOGS_ACTION.SIGNUP.value, "Registered", 200, "", 0)
         return created_user
+
+    def reset_password(self, request: Request, data: EmailDataType):
+        userInfo = self.dbhandler.auth_keys_collection.find_one({"email": data.email})
+        new_password = str(uuid.uuid4())
+        if userInfo:
+            self.dbhandler.auth_keys_collection.update_one({"email": data.email}, {"$set": {"password": hash_password(new_password)}})
+            return {"message": "Password reset successfully"}
+        else:
+            raise HTTPException(status_code=400, detail="User does not exist!")
+
+    def change_password(self, request: Request, data: ChangePasswordDataType):
+        userInfo = self.dbhandler.auth_keys_collection.find_one({"email": data.email})
+        if userInfo:
+            if check_password(data.oldPassword, userInfo["password"]):
+                self.dbhandler.auth_keys_collection.update_one({"email": data.email}, {"$set": {"password": hash_password(data.newPassword)}})
+                self.auth_keys = self.dbhandler.get_auth_keys()
+                api_key = request.headers.get("API_KEY")
+                user_info = self.auth_keys[api_key]
+                if user_info:
+                    user_info.pop("password", None)
+                    user_info.pop("temp_id", None)
+                    self.log_user_activity(api_key, LOGS_ACTION.CHANGE_PASSWORD.value, "Password changed", 200, "", 0)
+                    return {"message": "Password changed successfully", "user": user_info}
+            else:
+                raise HTTPException(status_code=400, detail="Old password is incorrect!")
+        else:
+            raise HTTPException(status_code=400, detail="User does not exist!")
 
     def get_user_info(self, request: Request):
         try:
