@@ -6,7 +6,8 @@ from slowapi import Limiter
 from slowapi.util import get_remote_address
 from services.image_generation_service import ImageGenerationService
 from services.user_service import UserService
-from utils.data_types import APIKey, ChangePasswordDataType, EmailDataType, Prompt, TextPrompt, TextToImage, ImageToImage, UserSigninInfo, ValidatorInfo, ChatCompletion
+from services.stripe_service import StripeService
+from utils.data_types import APIKey, ChangePasswordDataType, EmailDataType, Prompt, TextPrompt, TextToImage, ImageToImage, UserSigninInfo, ValidatorInfo, ChatCompletion, StripePay
 from utils.db_client import MongoDBHandler
 from dotenv import load_dotenv
 
@@ -163,3 +164,7 @@ def reset_password(request: Request, data: EmailDataType):
 @limiter.limit(API_RATE_LIMIT) # Update the rate limit
 def change_password(request: Request, data: ChangePasswordDataType):
     return user_service.change_password(request, data)
+
+@app.app.post("/api/v1/create-payment-intent")
+async def create_payment_intent(data: StripePay):
+    return await StripeService.create_payment_intent(data)
