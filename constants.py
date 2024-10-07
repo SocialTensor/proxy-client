@@ -6,8 +6,6 @@ PRO_API_RATE_LIMIT = "1000/minute"
 
 DB_NAME = "image_generation_service"
 
-STRIPE_SECRET_KEY = "sk_test_51Q5iIUKOYp5FR06LP4uLZk99zH0rQUaOmrlEJRJUZzNynfFghEB2tzGQaGpjO9oLcSHHIQYY52zJeCkFs5Q0bAdu00GItk53bQ"
-
 # Create enum for the models
 class ModelName(Enum):
   JUGGERNAUT_XL = "JuggernautXL"

@@ -14,7 +14,7 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from fastapi import FastAPI, Header, HTTPException, Depends, Request
 from PIL import Image
 from threading import Thread
-from constants import API_RATE_LIMIT, LOGS_ACTION, PRO_API_RATE_LIMIT, ModelName, STRIPE_SECRET_KEY
+from constants import API_RATE_LIMIT, LOGS_ACTION, PRO_API_RATE_LIMIT, ModelName
 from slowapi import Limiter
 from slowapi.util import get_remote_address
 from prometheus_fastapi_instrumentator import Instrumentator
@@ -26,9 +26,11 @@ from transformers import AutoTokenizer
 from auth.index import AuthService
 import stripe
 import json
-from flask import jsonify
+from dotenv import load_dotenv
 
-stripe.api_key = STRIPE_SECRET_KEY
+load_dotenv()
+
+stripe.api_key = os.getenv('STRIPE_SECRET_KEY')
 
 def get_api_key(request: Request):
     return request.headers.get("API_KEY", get_remote_address(request))
@@ -68,8 +70,8 @@ class ImageGenerationService:
     def __init__(self):
         self.subtensor = bt.subtensor("finney")
         self.metagraph = self.subtensor.metagraph(23)
-        # mongoDBConnectUri = f"mongodb://localhost:27017"
-        mongoDBConnectUri = f"mongodb://{MONGOUSER}:{MONGOPASSWORD}@{MONGOHOST}:{MONGOPORT}"
+        mongoDBConnectUri = f"mongodb://localhost:27017"
+        # mongoDBConnectUri = f"mongodb://{MONGOUSER}:{MONGOPASSWORD}@{MONGOHOST}:{MONGOPORT}"
         print(mongoDBConnectUri)
         self.dbhandler = MongoDBHandler(mongoDBConnectUri, )
         # verify db connection
@@ -656,7 +658,6 @@ class ImageGenerationService:
     
     async def create_payment_intent(self, request: Request, data: StripePay):
         try:
-            data = json.loads(request.data)
             intent = stripe.PaymentIntent.create(
                 amount=data.price,
                 currency='usd',
@@ -664,12 +665,9 @@ class ImageGenerationService:
                     'enabled': True,
                 },
             )
-            return jsonify({
-                'clientSecret': intent['client_secret'],
-                'dpmCheckerLink': 'https://dashboard.stripe.com/settings/payment_methods/review?transaction_id={}'.format(intent['id']),
-            })
+            return intent['client_secret']
         except Exception as e:
-            return jsonify(error=str(e)), 403
+            return "error"
 
 app = ImageGenerationService()
 
@@ -784,6 +782,6 @@ def get_logs(request: Request):
     else:
         raise HTTPException(status_code=500, detail="Failed to get logs")
 
-@app.app.post("/create-payment-intent")
+@app.app.post("/api/v1/create-payment-intent")
 async def create_payment_intent(request: Request, data: StripePay):
     return await app.create_payment_intent(request, data)

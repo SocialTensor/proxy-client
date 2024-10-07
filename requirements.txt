@@ -11,4 +11,4 @@ bcrypt==4.1.3
 transformers
 jinja2==3.1.0
 stripe
-Flask
+python-dotenv
