@@ -62,6 +62,6 @@ class MongoDBHandler(DBBase):
             auth_keys[docKey["key"]] = doc
       
     for k, v in auth_keys.items():
-      v.setdefault("credit", 10)
+      v.setdefault("credit", 5)
     return auth_keys
 

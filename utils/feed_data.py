@@ -8,7 +8,7 @@ VALIDATORS_FEED = [
 ]
 
 AUTH_KEYS_FEED = [
-    {"_id": "[auth_key]", "request_count": 0, "credit": 10, "email": "", "password": ""}
+    {"_id": "[auth_key]", "request_count": 0, "credit": 5, "email": "", "password": ""}
 ]
 
 MODEL_CONFIG_FEED = [
