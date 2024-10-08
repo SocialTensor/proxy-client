@@ -155,3 +155,8 @@ def reset_password(request: Request, data: EmailDataType):
 @limiter.limit(API_RATE_LIMIT) # Update the rate limit
 def change_password(request: Request, data: ChangePasswordDataType):
     return user_service.change_password(request, data)
+
+@app.app.post("/api/v1/stripe-webhook")
+async def stripe_webhook(request: Request):
+    return await user_service.handle_webhooks(request)
+    
