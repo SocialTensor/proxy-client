@@ -44,7 +44,8 @@ class UserService:
                 "credit": 5,
                 "created_date": datetime.utcnow(),
                 "api_keys": [{"key": str(uuid.uuid4()), "created": datetime.utcnow()}],
-                "usage": []
+                "usage": [],
+                "balance_history": []
             }
         )
         created_user = self.dbhandler.auth_keys_collection.find_one(
@@ -184,3 +185,53 @@ class UserService:
                 "timestamp": datetime.utcnow(),
             }
         )
+    def add_balance(self, email, amount):
+        userInfo = self.dbhandler.auth_keys_collection.find_one({"email": email})
+        if userInfo:
+            # Update the credit
+            new_credit = userInfo.get("credit", 0) + amount
+            self.dbhandler.auth_keys_collection.update_one(
+                {"email": email},
+                {"$set": {"credit": new_credit}}
+            )
+
+            # Prepare balance history entry
+            balance_entry = {
+                "amount": amount,
+                "timestamp": datetime.utcnow()
+            }
+
+            # Update balance_history
+            if "balance_history" not in userInfo:
+                self.dbhandler.auth_keys_collection.update_one(
+                    {"email": email},
+                    {"$set": {"balance_history": [balance_entry]}}
+                )
+            else:
+                self.dbhandler.auth_keys_collection.update_one(
+                    {"email": email},
+                    {"$push": {"balance_history": balance_entry}}
+                )
+
+            # Log the balance addition
+            self.log_user_activity(userInfo["_id"], LOGS_ACTION.ADD_BALANCE.value, f"Added balance: {amount}", 200, "", 0)
+        else:
+            raise HTTPException(status_code=400, detail="User does not exist!")
+
+    async def handle_webhooks(self, request: Request):
+        try:
+            json_data = await request.json()
+
+            # Check if the event type is charge.succeeded
+            if json_data.get("type") == "charge.succeeded":
+                email = json_data.get("data", {}).get("object", {}).get("billing_details", {}).get("email")
+                amount = json_data.get("data", {}).get("object", {}).get("amount")
+                self.add_balance(email, amount / 100)
+                print(f"Charge succeeded event received. Email: {email}, Amount: {amount}")
+                return {"message": "charge succeeded"}
+            else:
+                return {"message": "Stripe webhook called"}
+        
+        except Exception as e:
+            print(f"Error processing webhook: {e}", flush=True)
+            raise HTTPException(status_code=400, detail="Invalid webhook data")

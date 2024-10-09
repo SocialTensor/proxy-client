@@ -30,3 +30,4 @@ class LOGS_ACTION(Enum):
   APICALL = "API call"
   CREATE_API_KEY = "Create API key"
   DELETE_API_KEY = "Delete API key"
+  ADD_BALANCE = "Add Balance"
