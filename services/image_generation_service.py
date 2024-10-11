@@ -1,6 +1,7 @@
 import asyncio
 import base64
 import io
+from pyexpat import model
 import requests
 import random
 from datetime import datetime, date
@@ -13,7 +14,7 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from fastapi import FastAPI, HTTPException, Request
 from PIL import Image
 from threading import Thread
-from constants import LOGS_ACTION, ModelName
+from constants import LOGS_ACTION, STYLE_TO_MODEL_MAPPING, ModelName, MODEL_CLASSIFICATION_URL
 from prometheus_fastapi_instrumentator import Instrumentator
 from PIL import Image
 from utils.common import pil_image_to_base64
@@ -348,11 +349,27 @@ class ImageGenerationService:
     async def get_validators(self) -> List:
         return list(self.available_validators.keys())
 
+    async def get_model_classification(self, model_name: str, prompt: str) -> str:
+        if model_name == "AutoClassifier":
+            try:
+                response = requests.post(MODEL_CLASSIFICATION_URL, json={"prompt": prompt})
+                print(response.json())
+                if response.status_code == 200:
+                    result = response.json()
+                    return STYLE_TO_MODEL_MAPPING[result['category']]
+                else:
+                    print(f"Classification error: {response.status_code}")
+                    return "JuggernautXL"
+            except Exception as e:
+                print(f"Exception in classification: {str(e)}")
+                return "JuggernautXL"
+        return model_name
+
     async def txt2img_api(self, request: Request, data: TextToImage):
         # Get API_KEY from header
         api_key = request.headers.get("API_KEY")
         prompt = data.prompt
-        model_name = data.model_name
+        model_name = await self.get_model_classification(data.model_name, prompt)
         aspect_ratio = data.aspect_ratio
         negative_prompt = data.negative_prompt
         seed = data.seed
