@@ -1,3 +1,4 @@
+import os
 from constants import DB_NAME, CollectionName
 from bson.json_util import dumps
 from typing import Dict
@@ -8,9 +9,21 @@ from bson import ObjectId
 from utils.db_base import DBBase
 from utils.db_schemas import AuthKeySchema, ValidatorSchema
 from utils.feed_data import AUTH_KEYS_FEED, MODEL_CONFIG_FEED, VALIDATORS_FEED
+from dotenv import load_dotenv
+
+load_dotenv()
+
+MONGOUSER = os.getenv("MONGOUSER")
+MONGOPASSWORD = os.getenv("MONGOPASSWORD")
+MONGOHOST = os.getenv("MONGOHOST", "localhost")
+MONGOPORT = os.getenv("MONGOPORT", 27017)
+
+# mongoDBConnectUri = f"mongodb://localhost:27017"
+mongoDBConnectUri = f"mongodb://{MONGOUSER}:{MONGOPASSWORD}@{MONGOHOST}:{MONGOPORT}"
+print(mongoDBConnectUri)
 
 class MongoDBHandler(DBBase):
-  def __init__(self, mongoDBConnectUri: str, dbname = DB_NAME) -> None:
+  def __init__(self, dbname = DB_NAME) -> None:
     super().__init__(mongoDBConnectUri)
     is_first_time = False
     
