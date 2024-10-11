@@ -1,11 +1,16 @@
+import os
 import uuid
 from fastapi import HTTPException, Request
+import stripe
 from utils.common import check_password, hash_password
 from utils.data_types import ChangePasswordDataType, EmailDataType, UserSigninInfo, APIKey
 from constants import LOGS_ACTION
 from datetime import datetime
 from bson import ObjectId
 
+stripe.api_key = os.getenv("STRIPE_SECRET_KEY")
+STRIPE_PRODUCT_ID = os.getenv("STRIPE_PRODUCT_ID")
+STRIPE_PRICE_ID = os.getenv("STRIPE_PRICE_ID")
 class UserService:
     def __init__(self, dbhandler):
         self.dbhandler = dbhandler
@@ -221,17 +226,32 @@ class UserService:
     async def handle_webhooks(self, request: Request):
         try:
             json_data = await request.json()
+            charge = json_data['data']['object']
+                
+            # Check if the event type is checkout.session.completed
+            if json_data.get("type") == "checkout.session.completed":
+                session = json_data['data']['object']
+                session_id = session.get("id")
+                if session.get("payment_status") != "paid":
+                    return {"message": "Payment not completed"}, 400
+                try:
+                    line_items = stripe.checkout.Session.list_line_items(session_id)
 
-            # Check if the event type is charge.succeeded
-            if json_data.get("type") == "charge.succeeded":
-                email = json_data.get("data", {}).get("object", {}).get("billing_details", {}).get("email")
-                amount = json_data.get("data", {}).get("object", {}).get("amount")
-                self.add_balance(email, amount / 100)
-                print(f"Charge succeeded event received. Email: {email}, Amount: {amount}")
-                return {"message": "charge succeeded"}
+                    email = session.get("customer_details").get("email")  # Assuming you have this in the session
+                    for item in line_items.data:
+                        product_id = item.price.product
+                        price_id = item.price.id
+
+                        if product_id == STRIPE_PRODUCT_ID and price_id == STRIPE_PRICE_ID:
+                            self.add_balance(email, item.amount_total / 100)
+                            print(f"Checkout session completed. Email: {email}, Amount: {item.amount_total}")
+                            return {"message": "checkout session completed"}
+                except stripe.error.InvalidRequestError as e:
+                    print(f"Error retrieving checkout session: {e}", flush=True)
+                    return {"message": "Invalid checkout session"}, 400
             else:
                 return {"message": "Stripe webhook called"}
-        
+            return {"message": "No charge succeeded event received"}
         except Exception as e:
             print(f"Error processing webhook: {e}", flush=True)
             raise HTTPException(status_code=400, detail="Invalid webhook data")

@@ -9,7 +9,6 @@ from services.image_generation_service import ImageGenerationService
 from services.user_service import UserService
 from utils.data_types import APIKey, ChangePasswordDataType, EmailDataType, Prompt, TextPrompt, TextToImage, ImageToImage, UserSigninInfo, ValidatorInfo, ChatCompletion
 from utils.db_client import MongoDBHandler
-from dotenv import load_dotenv
 
 def get_api_key(request: Request):
     return request.headers.get("API_KEY", get_remote_address(request))
