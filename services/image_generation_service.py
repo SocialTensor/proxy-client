@@ -352,7 +352,6 @@ class ImageGenerationService:
         if model_name == "SuperEnsemble":
             try:
                 response = requests.post(MODEL_CLASSIFICATION_URL, json={"prompt": prompt})
-                print(response.json())
                 if response.status_code == 200:
                     result = response.json()
                     return STYLE_TO_MODEL_MAPPING[result['category']]
