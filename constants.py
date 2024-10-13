@@ -11,7 +11,7 @@ MODEL_CLASSIFICATION_URL = "https://superensembleclassifier-production.up.railwa
 
 STYLE_TO_MODEL_MAPPING = {
     "general": "OpenGeneral",
-    "digital": "OpenDigitalArt",
+    "digital art": "OpenDigitalArt",
 }
 
 # Create enum for the models

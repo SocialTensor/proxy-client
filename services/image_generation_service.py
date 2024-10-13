@@ -350,7 +350,7 @@ class ImageGenerationService:
         return list(self.available_validators.keys())
 
     async def get_model_classification(self, model_name: str, prompt: str) -> str:
-        if model_name == "AutoClassifier":
+        if model_name == "SuperEnsemble":
             try:
                 response = requests.post(MODEL_CLASSIFICATION_URL, json={"prompt": prompt})
                 print(response.json())
@@ -359,10 +359,10 @@ class ImageGenerationService:
                     return STYLE_TO_MODEL_MAPPING[result['category']]
                 else:
                     print(f"Classification error: {response.status_code}")
-                    return "JuggernautXL"
+                    return "OpenGeneral"
             except Exception as e:
                 print(f"Exception in classification: {str(e)}")
-                return "JuggernautXL"
+                return "OpenGeneral"
         return model_name
 
     async def txt2img_api(self, request: Request, data: TextToImage):
