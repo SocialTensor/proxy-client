@@ -1,7 +1,6 @@
 import asyncio
 import base64
 import io
-from pyexpat import model
 import requests
 import random
 from datetime import datetime, date
