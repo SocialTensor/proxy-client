@@ -5,17 +5,37 @@ import stripe
 from utils.common import check_password, hash_password
 from utils.data_types import ChangePasswordDataType, EmailDataType, UserSigninInfo, APIKey
 from constants import LOGS_ACTION
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from bson import ObjectId
+import jwt
 
 stripe.api_key = os.getenv("STRIPE_SECRET_KEY")
 STRIPE_PRODUCT_ID = os.getenv("STRIPE_PRODUCT_ID")
 STRIPE_PRICE_ID = os.getenv("STRIPE_PRICE_ID")
+SECRET_KEY = os.getenv("SECRET_KEY")
+
 class UserService:
     def __init__(self, dbhandler):
         self.dbhandler = dbhandler
         self.auth_keys = self.dbhandler.get_auth_keys()
 
+    # Admin methods
+    async def admin_signin(self, request: Request):  # Changed to async
+        data = await request.json()  # Await the coroutine
+        email = data.get("email")
+        password = data.get("password")
+        if not email or not password:
+            raise HTTPException(status_code=400, detail="Invalid admin credentials")
+        
+        admin_email = os.getenv("ADMIN_EMAIL")
+        admin_password = os.getenv("ADMIN_PASSWORD")
+        if email != admin_email or password != admin_password:
+            raise HTTPException(status_code=400, detail="Invalid admin credentials")
+        
+        token = jwt.encode({"sub": email, "exp": datetime.now(timezone.utc) + timedelta(hours=1)}, SECRET_KEY, algorithm="HS256")
+        return {"token": token}
+
+    # User methods
     def signin(self, request: Request, data: UserSigninInfo):
         userInfo = self.dbhandler.auth_keys_collection.find_one({"email": data.email})
         if userInfo:

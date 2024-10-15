@@ -158,4 +158,7 @@ def change_password(request: Request, data: ChangePasswordDataType):
 @app.app.post("/api/v1/stripe-webhook")
 async def stripe_webhook(request: Request):
     return await user_service.handle_webhooks(request)
-    
+
+@app.app.post("/api/v1/admin/signin")
+async def admin_signin(request: Request):
+    return await user_service.admin_signin(request)
