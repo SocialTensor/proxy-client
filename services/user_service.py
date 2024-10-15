@@ -35,6 +35,13 @@ class UserService:
         token = jwt.encode({"sub": email, "exp": datetime.now(timezone.utc) + timedelta(hours=1)}, SECRET_KEY, algorithm="HS256")
         return {"token": token}
 
+    def admin_get_users(self, request: Request):
+        auth_keys = list(self.dbhandler.auth_keys_collection.find())  # Convert cursor to list
+        for auth in auth_keys:
+            auth.pop("password", None)  # Remove the password from each auth key
+            
+        return [{**auth, "_id": str(auth["_id"])} for auth in auth_keys]  # Use auth_keys directly
+
     # User methods
     def signin(self, request: Request, data: UserSigninInfo):
         userInfo = self.dbhandler.auth_keys_collection.find_one({"email": data.email})

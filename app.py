@@ -1,12 +1,13 @@
 import os
 from typing import Union
 from fastapi import HTTPException, Depends, Request
+import jwt
 from constants import API_RATE_LIMIT
 from slowapi import Limiter
 from slowapi.util import get_remote_address
 from utils.db_client import MongoDBHandler
 from services.image_generation_service import ImageGenerationService
-from services.user_service import UserService
+from services.user_service import SECRET_KEY, UserService
 from utils.data_types import APIKey, ChangePasswordDataType, EmailDataType, Prompt, TextPrompt, TextToImage, ImageToImage, UserSigninInfo, ValidatorInfo, ChatCompletion
 from utils.db_client import MongoDBHandler
 
@@ -45,9 +46,17 @@ async def api_key_checker(request: Request = None):
 
 admin_keys = ["82aa2404-5774-468a-98f7-694f33f965c6", "66fad9cbdf55d190f6d8693f"]
 async def is_admin(request: Request):
-    api_key = request.headers.get("API_KEY")
-    if not api_key or api_key not in admin_keys:
+    token = request.headers.get('Authorization')
+    if not token or len(token.split(" ")) < 2:  # Check if token is present and has the correct format
         raise HTTPException(status_code=403, detail="Not an admin")
+    token = token.split(" ")[1]  # Now safe to access the second element
+    try:
+        # Decode the token
+        data = jwt.decode(token, SECRET_KEY, algorithms=['HS256'])
+    except Exception as e:
+        print("=== exception ===>", e)
+        raise HTTPException(status_code=403, detail="Invalid admin token")
+
 
 @app.app.post("/api/v1/txt2img", dependencies=[Depends(api_key_checker)])
 @limiter.limit(API_RATE_LIMIT) # Update the rate limit
@@ -162,3 +171,8 @@ async def stripe_webhook(request: Request):
 @app.app.post("/api/v1/admin/signin")
 async def admin_signin(request: Request):
     return await user_service.admin_signin(request)
+
+@app.app.post("/api/v1/admin/get_users", dependencies=[Depends(is_admin)])
+def get_users(request: Request):
+    users = user_service.admin_get_users(request)
+    return {"users": users}
