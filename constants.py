@@ -6,6 +6,12 @@ PRO_API_RATE_LIMIT = "1000/minute"
 
 DB_NAME = "image_generation_service"
 
+
+STYLE_TO_MODEL_MAPPING = {
+    "general": "OpenGeneral",
+    "digital art": "OpenDigitalArt",
+}
+
 # Create enum for the models
 class ModelName(Enum):
   JUGGERNAUT_XL = "JuggernautXL"
