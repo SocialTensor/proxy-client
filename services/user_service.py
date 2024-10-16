@@ -8,7 +8,8 @@ from constants import LOGS_ACTION
 from datetime import datetime, timedelta, timezone
 from bson import ObjectId
 import jwt
-
+import random
+import string
 stripe.api_key = os.getenv("STRIPE_SECRET_KEY")
 STRIPE_PRODUCT_ID = os.getenv("STRIPE_PRODUCT_ID")
 STRIPE_PRICE_ID = os.getenv("STRIPE_PRICE_ID")
@@ -41,6 +42,20 @@ class UserService:
             auth.pop("password", None)  # Remove the password from each auth key
             
         return [{**auth, "_id": str(auth["_id"])} for auth in auth_keys]  # Use auth_keys directly
+
+    async def admin_delete_user(self, request: Request):
+        data = await request.json()  # Await the coroutine
+        _id = data.get("_id")
+        userInfo = self.dbhandler.auth_keys_collection.find_one({"_id": _id})
+        if userInfo:
+            self.dbhandler.logs_collection.delete_many({"api_key": _id})
+            api_keys = userInfo.get("api_keys", [])
+            for api_key in api_keys:
+                self.dbhandler.logs_collection.delete_many({"api_key": api_key["key"]})
+            self.dbhandler.auth_keys_collection.delete_one({"_id": _id})
+            return {"message": "User deleted successfully"}
+        else:
+            raise HTTPException(status_code=400, detail="User does not exist!")
 
     # User methods
     def signin(self, request: Request, data: UserSigninInfo):
@@ -88,12 +103,15 @@ class UserService:
             self.log_user_activity(created_user["_id"], LOGS_ACTION.SIGNUP.value, "Registered", 200, "", 0)
         return created_user
 
-    def reset_password(self, request: Request, data: EmailDataType):
-        userInfo = self.dbhandler.auth_keys_collection.find_one({"email": data.email})
-        new_password = str(uuid.uuid4())
+    async def reset_password(self, request: Request):
+        data = await request.json()
+        _id = data.get("_id")
+        
+        userInfo = self.dbhandler.auth_keys_collection.find_one({"_id": _id})
         if userInfo:
-            self.dbhandler.auth_keys_collection.update_one({"email": data.email}, {"$set": {"password": hash_password(new_password)}})
-            return {"message": "Password reset successfully"}
+            new_password = ''.join(random.choices(string.ascii_letters + string.digits + string.punctuation, k=12))  # Generate a secure random password
+            self.dbhandler.auth_keys_collection.update_one({"_id": _id}, {"$set": {"password": hash_password(new_password)}})
+            return {"message": "Password reset successfully", "password": new_password}
         else:
             raise HTTPException(status_code=400, detail="User does not exist!")
 

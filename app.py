@@ -154,10 +154,10 @@ def get_logs(request: Request):
     else:
         raise HTTPException(status_code=500, detail="Failed to get logs")
 
-@app.app.post("/api/v1/reset_password", dependencies=[Depends(is_admin)])
+@app.app.post("/api/v1/admin/reset_password", dependencies=[Depends(is_admin)])
 @limiter.limit(API_RATE_LIMIT) # Update the rate limit
-def reset_password(request: Request, data: EmailDataType):
-    return user_service.reset_password(request, data)
+async def reset_password(request: Request):
+    return await user_service.reset_password(request)
 
 @app.app.post("/api/v1/change_password", dependencies=[Depends(api_key_checker)])
 @limiter.limit(API_RATE_LIMIT) # Update the rate limit
@@ -176,3 +176,8 @@ async def admin_signin(request: Request):
 def get_users(request: Request):
     users = user_service.admin_get_users(request)
     return {"users": users}
+
+@app.app.post("/api/v1/admin/delete_user", dependencies=[Depends(is_admin)])
+async def delete_user(request: Request):
+    result = await user_service.admin_delete_user(request)
+    return result
