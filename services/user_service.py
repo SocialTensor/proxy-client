@@ -1,11 +1,16 @@
+import os
 import uuid
 from fastapi import HTTPException, Request
+import stripe
 from utils.common import check_password, hash_password
 from utils.data_types import ChangePasswordDataType, EmailDataType, UserSigninInfo, APIKey
 from constants import LOGS_ACTION
 from datetime import datetime
 from bson import ObjectId
 
+stripe.api_key = os.getenv("STRIPE_SECRET_KEY")
+STRIPE_PRODUCT_ID = os.getenv("STRIPE_PRODUCT_ID")
+STRIPE_PRICE_ID = os.getenv("STRIPE_PRICE_ID")
 class UserService:
     def __init__(self, dbhandler):
         self.dbhandler = dbhandler
@@ -44,7 +49,8 @@ class UserService:
                 "credit": 5,
                 "created_date": datetime.utcnow(),
                 "api_keys": [{"key": str(uuid.uuid4()), "created": datetime.utcnow()}],
-                "usage": []
+                "usage": [],
+                "balance_history": []
             }
         )
         created_user = self.dbhandler.auth_keys_collection.find_one(
@@ -184,3 +190,68 @@ class UserService:
                 "timestamp": datetime.utcnow(),
             }
         )
+    def add_balance(self, email, amount):
+        userInfo = self.dbhandler.auth_keys_collection.find_one({"email": email})
+        if userInfo:
+            # Update the credit
+            new_credit = userInfo.get("credit", 0) + amount
+            self.dbhandler.auth_keys_collection.update_one(
+                {"email": email},
+                {"$set": {"credit": new_credit}}
+            )
+
+            # Prepare balance history entry
+            balance_entry = {
+                "amount": amount,
+                "timestamp": datetime.utcnow()
+            }
+
+            # Update balance_history
+            if "balance_history" not in userInfo:
+                self.dbhandler.auth_keys_collection.update_one(
+                    {"email": email},
+                    {"$set": {"balance_history": [balance_entry]}}
+                )
+            else:
+                self.dbhandler.auth_keys_collection.update_one(
+                    {"email": email},
+                    {"$push": {"balance_history": balance_entry}}
+                )
+
+            # Log the balance addition
+            self.log_user_activity(userInfo["_id"], LOGS_ACTION.ADD_BALANCE.value, f"Added balance: {amount}", 200, "", 0)
+        else:
+            raise HTTPException(status_code=400, detail="User does not exist!")
+
+    async def handle_webhooks(self, request: Request):
+        try:
+            json_data = await request.json()
+            charge = json_data['data']['object']
+                
+            # Check if the event type is checkout.session.completed
+            if json_data.get("type") == "checkout.session.completed":
+                session = json_data['data']['object']
+                session_id = session.get("id")
+                if session.get("payment_status") != "paid":
+                    return {"message": "Payment not completed"}, 400
+                try:
+                    line_items = stripe.checkout.Session.list_line_items(session_id)
+
+                    email = session.get("customer_details").get("email")  # Assuming you have this in the session
+                    for item in line_items.data:
+                        product_id = item.price.product
+                        price_id = item.price.id
+
+                        if product_id == STRIPE_PRODUCT_ID and price_id == STRIPE_PRICE_ID:
+                            self.add_balance(email, item.amount_total / 100)
+                            print(f"Checkout session completed. Email: {email}, Amount: {item.amount_total}")
+                            return {"message": "checkout session completed"}
+                except stripe.error.InvalidRequestError as e:
+                    print(f"Error retrieving checkout session: {e}", flush=True)
+                    return {"message": "Invalid checkout session"}, 400
+            else:
+                return {"message": "Stripe webhook called"}
+            return {"message": "No charge succeeded event received"}
+        except Exception as e:
+            print(f"Error processing webhook: {e}", flush=True)
+            raise HTTPException(status_code=400, detail="Invalid webhook data")

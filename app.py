@@ -4,13 +4,12 @@ from fastapi import HTTPException, Depends, Request
 from constants import API_RATE_LIMIT
 from slowapi import Limiter
 from slowapi.util import get_remote_address
+from utils.db_client import MongoDBHandler
 from services.image_generation_service import ImageGenerationService
 from services.user_service import UserService
 from utils.data_types import APIKey, ChangePasswordDataType, EmailDataType, Prompt, TextPrompt, TextToImage, ImageToImage, UserSigninInfo, ValidatorInfo, ChatCompletion
 from utils.db_client import MongoDBHandler
-from dotenv import load_dotenv
 
-load_dotenv()
 def get_api_key(request: Request):
     return request.headers.get("API_KEY", get_remote_address(request))
 
@@ -29,10 +28,8 @@ MONGOHOST = os.getenv("MONGOHOST", "localhost")
 MONGOPORT = os.getenv("MONGOPORT", 27017)
 CLASSIFIER_URL = os.getenv("CLASSIFIER_URL")
 
-# mongoDBConnectUri = f"mongodb://localhost:27017"
-mongoDBConnectUri = f"mongodb://{MONGOUSER}:{MONGOPASSWORD}@{MONGOHOST}:{MONGOPORT}"
-print(mongoDBConnectUri)
-dbhandler = MongoDBHandler(mongoDBConnectUri, )
+
+dbhandler = MongoDBHandler()
 # verify db connection
 print(dbhandler.client.server_info())
 
@@ -164,3 +161,8 @@ def reset_password(request: Request, data: EmailDataType):
 @limiter.limit(API_RATE_LIMIT) # Update the rate limit
 def change_password(request: Request, data: ChangePasswordDataType):
     return user_service.change_password(request, data)
+
+@app.app.post("/api/v1/stripe-webhook")
+async def stripe_webhook(request: Request):
+    return await user_service.handle_webhooks(request)
+    
