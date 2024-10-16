@@ -6,8 +6,6 @@ PRO_API_RATE_LIMIT = "1000/minute"
 
 DB_NAME = "image_generation_service"
 
-MODEL_CLASSIFICATION_URL = "https://superensembleclassifier-production.up.railway.app/classify"
-
 
 STYLE_TO_MODEL_MAPPING = {
     "general": "OpenGeneral",
