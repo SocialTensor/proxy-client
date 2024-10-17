@@ -44,7 +44,6 @@ async def api_key_checker(request: Request = None):
     if not api_key or api_key not in app.dbhandler.get_auth_keys():
         raise HTTPException(status_code=403, detail="Invalid or missing API key")
 
-admin_keys = ["82aa2404-5774-468a-98f7-694f33f965c6", "66fad9cbdf55d190f6d8693f"]
 async def is_admin(request: Request):
     token = request.headers.get('Authorization')
     if not token or len(token.split(" ")) < 2:  # Check if token is present and has the correct format
