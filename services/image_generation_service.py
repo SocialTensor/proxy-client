@@ -32,11 +32,11 @@ class ImageGenerationService:
     def __init__(self, dbhandler, auth_service):
         self.dbhandler = dbhandler
         self.auth_service = auth_service
-        self.subtensor = bt.subtensor("finney")
-        self.metagraph = self.subtensor.metagraph(23)
+        # self.subtensor = bt.subtensor("finney")
+        # self.metagraph = self.subtensor.metagraph(23)
         
-        self.available_validators = self.dbhandler.get_available_validators()
-        self.filter_validators()
+        # self.available_validators = self.dbhandler.get_available_validators()
+        # self.filter_validators()
         self.app = FastAPI()
         # Add CORSMiddleware to the application instance
         self.app.add_middleware(
@@ -47,30 +47,30 @@ class ImageGenerationService:
             allow_headers=["*"],  # Allows all headers
         )
         self.auth_keys = self.dbhandler.get_auth_keys()
-        self.private_key = self.load_private_key()
-        self.public_key = self.private_key.public_key()
-        self.public_key_bytes = self.public_key.public_bytes(
-            encoding=serialization.Encoding.Raw, format=serialization.PublicFormat.Raw
-        )
-        model_list_entry = self.dbhandler.model_config.find_one({"name": "model_list"})
-        self.model_list = model_list_entry["data"] if model_list_entry else {}
-        self.message = "image-generating-subnet"
-        self.signature = base64.b64encode(
-            self.private_key.sign(self.message.encode("utf-8"))
-        )
+        # self.private_key = self.load_private_key()
+        # self.public_key = self.private_key.public_key()
+        # self.public_key_bytes = self.public_key.public_bytes(
+        #     encoding=serialization.Encoding.Raw, format=serialization.PublicFormat.Raw
+        # )
+        # model_list_entry = self.dbhandler.model_config.find_one({"name": "model_list"})
+        # self.model_list = model_list_entry["data"] if model_list_entry else {}
+        # self.message = "image-generating-subnet"
+        # self.signature = base64.b64encode(
+        #     self.private_key.sign(self.message.encode("utf-8"))
+        # )
 
-        self.loop = asyncio.get_event_loop()
+        # self.loop = asyncio.get_event_loop()
 
-        Instrumentator().instrument(self.app).expose(self.app)
-        Thread(target=self.sync_metagraph_periodically, daemon=True).start()
-        Thread(target=self.recheck_validators, daemon=True).start()
+        # Instrumentator().instrument(self.app).expose(self.app)
+        # Thread(target=self.sync_metagraph_periodically, daemon=True).start()
+        # Thread(target=self.recheck_validators, daemon=True).start()
 
-        self.tokenizer_config = self.dbhandler.model_config.find_one({"name": "tokenizer"})
-        print(self.tokenizer_config, flush=True)
-        self.tokenizers = {
-            k: AutoTokenizer.from_pretrained(v) for k, v in self.tokenizer_config["data"].items()
-        }
-        print(self.tokenizers, flush=True)
+        # self.tokenizer_config = self.dbhandler.model_config.find_one({"name": "tokenizer"})
+        # print(self.tokenizer_config, flush=True)
+        # self.tokenizers = {
+        #     k: AutoTokenizer.from_pretrained(v) for k, v in self.tokenizer_config["data"].items()
+        # }
+        # print(self.tokenizers, flush=True)
         
     def sync_db(self):
         new_available_validators = self.dbhandler.get_available_validators()
@@ -81,7 +81,7 @@ class ImageGenerationService:
 
     def filter_validators(self) -> None:
         for hotkey in list(self.available_validators.keys()):
-            self.available_validators[hotkey]["is_active"] = False
+            self.available_validators[hotkey]["is_active"] = True
             if hotkey not in self.metagraph.hotkeys:
                 print(f"Removing validator {hotkey}", flush=True)
                 self.dbhandler.validators_collection.delete_one({"_id": hotkey})
@@ -326,7 +326,7 @@ class ImageGenerationService:
                 except Exception as e:
                     print(f"Validator {hotkey} failed to respond: {e}", flush=True)
                     # Set is_active to False if validator is not responding
-                    self.available_validators[hotkey]["is_active"] = False
+                    self.available_validators[hotkey]["is_active"] = True
 
         while True:
             print("Rechecking validators", flush=True)
