@@ -23,6 +23,13 @@ def dynamic_rate_limit(request: Request):  # Add request parameter
     # else:
     return API_RATE_LIMIT  # Default limit for regular users
 
+MONGOUSER = os.getenv("MONGOUSER")
+MONGOPASSWORD = os.getenv("MONGOPASSWORD")
+MONGOHOST = os.getenv("MONGOHOST", "localhost")
+MONGOPORT = os.getenv("MONGOPORT", 27017)
+CLASSIFIER_URL = os.getenv("CLASSIFIER_URL")
+
+
 dbhandler = MongoDBHandler()
 # verify db connection
 print(dbhandler.client.server_info())
@@ -60,7 +67,7 @@ async def is_admin(request: Request):
 @app.app.post("/api/v1/txt2img", dependencies=[Depends(api_key_checker)])
 @limiter.limit(API_RATE_LIMIT) # Update the rate limit
 async def txt2img_api2(request: Request, data: TextToImage):
-    return await app.txt2img_api(request, data)
+    return await app.txt2img_api(request, data, CLASSIFIER_URL)
 
 @app.app.post("/get_credentials")
 @limiter.limit(API_RATE_LIMIT) # Update the rate limit
