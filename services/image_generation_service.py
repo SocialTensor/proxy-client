@@ -21,6 +21,8 @@ from utils.data_types import Prompt, TextPrompt, TextToImage, ImageToImage, Vali
 from fastapi.middleware.cors import CORSMiddleware
 from transformers import AutoTokenizer
 
+REQUEST_EXPIRY_LIMIT_SECONDS = 5
+
 # Define a list of allowed origins (domains)
 allowed_origins = [
     "http://localhost:3000",  # Change this to the domain you want to allow
@@ -118,9 +120,30 @@ class ImageGenerationService:
     async def get_credentials(
         self, request: Request, validator_info: ValidatorInfo
     ) -> Dict:
+        # Verify validator by its signature and timestamp
+        try:
+            # Check if the request is within the REQUEST_EXPIRY_LIMIT_SECONDS window
+            received_time_ns = int(validator_info.nonce)
+            current_time_ns = time.time_ns()
+            time_difference_seconds = (current_time_ns - received_time_ns) / 1e9  # Convert nanoseconds to seconds
+            
+            if time_difference_seconds > REQUEST_EXPIRY_LIMIT_SECONDS:
+                raise HTTPException(status_code=400, detail="Request expired")
+            
+            # Proceed with signature verification
+            validator_ss58_address = self.metagraph.hotkeys[validator_info.uid]
+            message = f"{validator_info.postfix}{validator_ss58_address}{validator_info.nonce}"
+            keypair = bt.Keypair(ss58_address=validator_ss58_address)
+            is_verified = keypair.verify(message, validator_info.signature)
+        except (ValueError, KeyError):
+            is_verified = False
+
+        if not is_verified:
+            raise HTTPException(status_code=400, detail="Cannot verify validator")
+
         client_ip = request.headers.get('X-Real-Ip') or request.client.host
         uid = validator_info.uid
-        hotkey = self.metagraph.hotkeys[uid]
+        hotkey = validator_ss58_address
         postfix = validator_info.postfix
 
         if not postfix:

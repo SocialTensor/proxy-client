@@ -40,8 +40,9 @@ class ImageToImage(BaseModel):
 class ValidatorInfo(BaseModel):
     postfix: str
     uid: int
+    signature: str
+    nonce: str
     all_uid_info: dict = {}
-    sha: str = ""
 
 class UserSigninInfo(BaseModel):
     email: str
