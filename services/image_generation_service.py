@@ -135,7 +135,7 @@ class ImageGenerationService:
             message = f"{validator_info.postfix}{validator_ss58_address}{validator_info.nonce}"
             keypair = bt.Keypair(ss58_address=validator_ss58_address)
             is_verified = keypair.verify(message, validator_info.signature)
-        except (ValueError, KeyError):
+        except (ValueError, KeyError, IndexError):
             is_verified = False
 
         if not is_verified:
