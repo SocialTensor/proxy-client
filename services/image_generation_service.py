@@ -35,7 +35,7 @@ class ImageGenerationService:
         self.dbhandler = dbhandler
         self.auth_service = auth_service
         self.subtensor = bt.subtensor("finney")
-        self.metagraph = self.subtensor.metagraph(23)
+        self.metagraph: bt.metagraph = self.subtensor.metagraph(23)
         
         self.available_validators = self.dbhandler.get_available_validators()
         self.filter_validators()
@@ -120,23 +120,28 @@ class ImageGenerationService:
     async def get_credentials(
         self, request: Request, validator_info: ValidatorInfo
     ) -> Dict:
-        # Verify validator by its signature and timestamp
-        try:
-            # Check if the request is within the REQUEST_EXPIRY_LIMIT_SECONDS window
-            received_time_ns = int(validator_info.nonce)
-            current_time_ns = time.time_ns()
-            time_difference_seconds = (current_time_ns - received_time_ns) / 1e9  # Convert nanoseconds to seconds
-            
-            if time_difference_seconds > REQUEST_EXPIRY_LIMIT_SECONDS:
-                raise HTTPException(status_code=400, detail="Request expired")
-            
-            # Proceed with signature verification
-            validator_ss58_address = self.metagraph.hotkeys[validator_info.uid]
-            message = f"{validator_info.postfix}{validator_ss58_address}{validator_info.nonce}"
-            keypair = bt.Keypair(ss58_address=validator_ss58_address)
-            is_verified = keypair.verify(message, validator_info.signature)
-        except (ValueError, KeyError, IndexError):
-            is_verified = False
+        # Check if validator signed the Request, if not, bypass validating
+        # TODO: remove this logic once all validators updated to latest version
+        if not validator_info.signature:
+            is_verified = True
+        else:
+            # Verify validator by its signature and timestamp
+            try:
+                # Check if the request is within the REQUEST_EXPIRY_LIMIT_SECONDS window
+                received_time_ns = int(validator_info.nonce)
+                current_time_ns = time.time_ns()
+                time_difference_seconds = (current_time_ns - received_time_ns) / 1e9  # Convert nanoseconds to seconds
+                
+                if time_difference_seconds > REQUEST_EXPIRY_LIMIT_SECONDS:
+                    raise HTTPException(status_code=400, detail="Request expired")
+                
+                # Proceed with signature verification
+                validator_ss58_address = self.metagraph.hotkeys[validator_info.uid]
+                message = f"{validator_info.postfix}{validator_ss58_address}{validator_info.nonce}"
+                keypair = bt.Keypair(ss58_address=validator_ss58_address)
+                is_verified = keypair.verify(message, validator_info.signature)
+            except (ValueError, KeyError, IndexError):
+                is_verified = False
 
         if not is_verified:
             raise HTTPException(status_code=400, detail="Cannot verify validator")
