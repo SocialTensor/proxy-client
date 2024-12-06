@@ -124,6 +124,7 @@ class ImageGenerationService:
         # TODO: remove this logic once all validators updated to latest version
         if not validator_info.signature:
             is_verified = True
+            validator_ss58_address = self.metagraph.hotkeys[validator_info.uid]
         else:
             # Verify validator by its signature and timestamp
             try:
