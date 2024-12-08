@@ -40,8 +40,10 @@ class ImageToImage(BaseModel):
 class ValidatorInfo(BaseModel):
     postfix: str
     uid: int
+    # TODO: remove default None once all validators updated to latest version
+    signature: str = None
+    nonce: str = None
     all_uid_info: dict = {}
-    sha: str = ""
 
 class UserSigninInfo(BaseModel):
     email: str
