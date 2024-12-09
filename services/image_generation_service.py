@@ -21,7 +21,7 @@ from utils.data_types import Prompt, TextPrompt, TextToImage, ImageToImage, Vali
 from fastapi.middleware.cors import CORSMiddleware
 from transformers import AutoTokenizer
 
-REQUEST_EXPIRY_LIMIT_SECONDS = 5
+REQUEST_EXPIRY_LIMIT_SECONDS = 15
 
 # Define a list of allowed origins (domains)
 allowed_origins = [
