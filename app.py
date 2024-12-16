@@ -70,7 +70,7 @@ async def txt2img_api2(request: Request, data: TextToImage):
     return await app.txt2img_api(request, data, CLASSIFIER_URL)
 
 @app.app.post("/get_credentials")
-@limiter.limit(API_RATE_LIMIT) # Update the rate limit
+# @limiter.limit(API_RATE_LIMIT) # Update the rate limit
 async def get_credentials(request: Request, validator_info: ValidatorInfo):
     return await app.get_credentials(request, validator_info)
 
