@@ -65,7 +65,7 @@ async def is_admin(request: Request):
 
 
 @app.app.post("/api/v1/txt2img", dependencies=[Depends(api_key_checker)])
-@limiter.limit(API_RATE_LIMIT) # Update the rate limit
+# @limiter.limit(API_RATE_LIMIT) # Update the rate limit
 async def txt2img_api2(request: Request, data: TextToImage):
     return await app.txt2img_api(request, data, CLASSIFIER_URL)
 
@@ -75,37 +75,37 @@ async def get_credentials(request: Request, validator_info: ValidatorInfo):
     return await app.get_credentials(request, validator_info)
 
 @app.app.post("/generate", dependencies=[Depends(api_key_checker)])
-@limiter.limit(API_RATE_LIMIT) # Update the rate limit
+# @limiter.limit(API_RATE_LIMIT) # Update the rate limit
 async def generate(request: Request, prompt: Union[Prompt, TextPrompt]):
     return await app.generate(prompt)
 
 @app.app.get("/get_validators", dependencies=[Depends(api_key_checker)])
-@limiter.limit(API_RATE_LIMIT) # Update the rate limit
+# @limiter.limit(API_RATE_LIMIT) # Update the rate limit
 async def get_validators(request: Request):
     return await app.get_validators(request)
 
 @app.app.post("/api/v1/img2img", dependencies=[Depends(api_key_checker)])
-@limiter.limit(API_RATE_LIMIT) # Update the rate limit
+# @limiter.limit(API_RATE_LIMIT) # Update the rate limit
 async def img2img_api(request: Request, data: ImageToImage):
     return await app.img2img_api(request, data)
 
 @app.app.post("/api/v1/instantid", dependencies=[Depends(api_key_checker)])
-@limiter.limit(API_RATE_LIMIT) # Update the rate limit
+# @limiter.limit(API_RATE_LIMIT) # Update the rate limit
 async def instantid_api(request: Request, data: ImageToImage):
     return await app.instantid_api(request, data)
 
 @app.app.post("/api/v1/controlnet", dependencies=[Depends(api_key_checker)])
-@limiter.limit(API_RATE_LIMIT) # Update the rate limit
+# @limiter.limit(API_RATE_LIMIT) # Update the rate limit
 async def controlnet_api(request: Request, data: ImageToImage):
     return await app.controlnet_api(request, data)
 
 @app.app.post("/api/v1/upscale", dependencies=[Depends(api_key_checker)])
-@limiter.limit(API_RATE_LIMIT) # Update the rate limit
+# @limiter.limit(API_RATE_LIMIT) # Update the rate limit
 async def upscale_api(request: Request, data: ImageToImage):
     return await app.upscale_api(request, data)
 
 @app.app.post("/api/v1/chat/completions", dependencies=[Depends(api_key_checker)])
-@limiter.limit(API_RATE_LIMIT) # Update the rate limit
+# @limiter.limit(API_RATE_LIMIT) # Update the rate limit
 async def chat_completions_api(request: Request, data: ChatCompletion):
     return await app.chat_completions(request, data)
 
