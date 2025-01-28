@@ -24,22 +24,23 @@ MODEL_CONFIG_FEED = [
                     "guidance_scale": 7,
                 },
             },
-            "AnimeV3": {
-                "supporting_pipelines": ["txt2img"],
-                "default_params": {
-                    "num_inference_steps": 25,
-                    "clip_skip": 2,
-                    "guidance_scale": 7,
-                },
-            },
-            "RealitiesEdgeXL": {
-                "supporting_pipelines": ["txt2img", "controlnet"],
-                "default_params": {
-                    "num_inference_steps": 8,
-                    "clip_skip": 2,
-                    "guidance_scale": 2,
-                },
-            },
+            # TODO: Hide those for now to give more load for the other models
+            # "AnimeV3": {
+            #     "supporting_pipelines": ["txt2img"],
+            #     "default_params": {
+            #         "num_inference_steps": 25,
+            #         "clip_skip": 2,
+            #         "guidance_scale": 7,
+            #     },
+            # },
+            # "RealitiesEdgeXL": {
+            #     "supporting_pipelines": ["txt2img", "controlnet"],
+            #     "default_params": {
+            #         "num_inference_steps": 8,
+            #         "clip_skip": 2,
+            #         "guidance_scale": 2,
+            #     },
+            # },
             "DreamShaperXL": {
                 "supporting_pipelines": ["txt2img", "instantid", "img2img"],
                 "default_params": {
