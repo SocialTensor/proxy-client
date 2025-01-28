@@ -17,14 +17,14 @@ MODEL_CONFIG_FEED = [
         "name": "model_list",
         "data": {
             # TODO: Hide those for now to give more load for the other models
-            # "JuggernautXL": {
-            #     "supporting_pipelines": ["txt2img"],
-            #     "default_params": {
-            #         "num_inference_steps": 30,
-            #         "clip_skip": 2,
-            #         "guidance_scale": 7,
-            #     },
-            # },
+            "JuggernautXL": {
+                "supporting_pipelines": ["txt2img"],
+                "default_params": {
+                    "num_inference_steps": 30,
+                    "clip_skip": 2,
+                    "guidance_scale": 7,
+                },
+            },
             # "AnimeV3": {
             #     "supporting_pipelines": ["txt2img"],
             #     "default_params": {
