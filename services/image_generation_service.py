@@ -20,6 +20,11 @@ from utils.common import pil_image_to_base64
 from utils.data_types import Prompt, TextPrompt, TextToImage, ImageToImage, ValidatorInfo, ChatCompletion
 from fastapi.middleware.cors import CORSMiddleware
 from transformers import AutoTokenizer
+import sentry_sdk
+
+sentry_sdk.init(
+    dsn="https://c29179b17e940dd744ef5987e54076ff@o4508692980170752.ingest.us.sentry.io/4508721596334080",
+)
 
 # Define a list of allowed origins (domains)
 allowed_origins = [
