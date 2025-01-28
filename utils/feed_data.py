@@ -16,7 +16,6 @@ MODEL_CONFIG_FEED = [
         "_id": "[model_config]",
         "name": "model_list",
         "data": {
-            # TODO: Hide those for now to give more load for the other models
             "JuggernautXL": {
                 "supporting_pipelines": ["txt2img"],
                 "default_params": {
@@ -25,6 +24,7 @@ MODEL_CONFIG_FEED = [
                     "guidance_scale": 7,
                 },
             },
+            # TODO: Hide those for now to give more load for the other models
             # "AnimeV3": {
             #     "supporting_pipelines": ["txt2img"],
             #     "default_params": {
