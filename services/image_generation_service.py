@@ -184,7 +184,7 @@ class ImageGenerationService:
                 try:
                     async with httpx.AsyncClient(timeout=4) as client:
                         response = await client.post(
-                            "http://213.173.102.215:10354/api/prompt_expansion",
+                            "http://213.173.102.215:15568/api/prompt_expansion",
                             json={"prompt": prompt.prompt},
                         )
                     if response.status_code == 200:
